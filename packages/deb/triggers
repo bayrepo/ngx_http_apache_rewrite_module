@@ -1,0 +1,10 @@
+# Nginx module triggers - handles nginx reloading when modules change
+
+# Trigger type: wait allows packages to install themselves after nginx reload completes
+nginx/reload-inactive {
+	nginx-reload
+}
+
+nginx/reload-active {
+	nginx-reload
+}

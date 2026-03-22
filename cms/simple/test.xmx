@@ -1,0 +1,26 @@
+# Test File - test.xmx
+
+This is a test file used to verify the mod_rewrite rule that redirects all files ending with .xmx extension to index.html.
+
+## How it works:
+
+When you request any `.xmx` file in this directory, the following rule from `.htaccess` will be applied:
+
+```
+RewriteRule \.xmx$ /index.html [R=301,L]
+```
+
+This redirects your browser to `/index.html`.
+
+## Test URLs:
+
+- `http://localhost/test/test.xmx` → redirects to `/test/index.html`
+- `http://localhost/test/subdir/other.xmx` → redirects to `/test/index.html`
+- `http://localhost/test/deep/path/file.xmx` → redirects to `/test/index.html`
+
+## Additional Test Files:
+
+See other test pages in this directory:
+- index.html - main page
+- show.html - shown instead of redirect.html via internal rewrite
+- stop.html - should be blocked (403 Forbidden) by mod_rewrite rules

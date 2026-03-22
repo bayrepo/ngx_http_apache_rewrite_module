@@ -1,0 +1,26 @@
+Format: 1.0
+Upstream-Name: nginx-mod-rewrite
+Upstream-Contact: Alexey Berezhok <a@bayrepo.ru>
+Source: https://docs.brepo.ru/nginx-mod-rewrite
+
+Files: *
+Copyright: (c) 2026 Alexey Berezhok, All Rights Reserved.
+License: Apache-2.0
+
+Files: nginx-*/*
+Copyright: (c) 2002-2021 Igor Sysoev
+         (c) 2011-2021 Nginx, Inc., All Rights Reserved.
+License: BSD-3-Clause
+
+Documentation: docs/README.md
+Files: modules/mod_rewrite/*.c modules/mod_rewrite/*.h
+Copyright: (c) 2026 Alexey Berezhok, All Rights Reserved.
+License: Apache-2.0
+
+
+====
+====
+
+====
+
+====

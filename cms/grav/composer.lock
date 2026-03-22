@@ -1,0 +1,1 @@
+This is a composer.lock file - should be blocked by RewriteRule ^(LICENSE\.txt|composer\.lock|composer\.json|\.htaccess)$ error [F]

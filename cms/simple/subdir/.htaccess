@@ -1,0 +1,30 @@
+# ============================================================
+#   .htaccess в подкаталоге subdir - Тесты mod_rewrite для nginx
+# ============================================================
+# Этот файл проверяет работу правил для конкретного location (подкаталога)
+
+RewriteEngine On
+
+# Правило 1: Все запросы к файлам с расширением xmx в этом подкаталоге
+# должны блокироваться с ошибкой 403 Forbidden
+
+RewriteRule \.xmx$ - [F,L]
+
+# Тестирование:
+# - http://localhost/test/subdir/other.xmx → 403 Forbidden
+
+# Правило 2: Внутреннее перенаделение subdir/file.html на ../show.html
+# (переход из подкаталога в родительский)
+
+RewriteRule ^file\.html$ ../show.html [L]
+
+# Тестирование:
+# - http://localhost/test/subdir/file.html → показывает содержимое show.html
+
+# Правило 3: Блокировка доступа ко всем файлам кроме .html
+
+RewriteCond %{REQUEST_URI} !\.html$
+RewriteRule ^ - [F,L]
+
+# Тестирование:
+# - http://localhost/test/subdir/file.txt → 403 Forbidden

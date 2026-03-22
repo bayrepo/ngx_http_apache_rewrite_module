@@ -1,0 +1,6 @@
+# This is a robots.txt file for Drupal site testing
+# Should be allowed by RewriteRule "/\.|^\.(?!well-known/)" - [F] exception
+
+User-agent: *
+Disallow: /admin/
+Allow: /

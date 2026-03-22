@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Index - Тест mod_rewrite для nginx</title>
+    </head>
+    <body>
+        <h1>index.html</h1>
+        <p>Вы попали на index.html.</p>
+        <p>
+            <strong
+                >Это страница назначения при перенаправлении файлов с
+                расширением xmx.</strong
+            >
+        </p>
+
+        <hr />
+        <ul>
+            <li><a href="show.html">Показать (show.html)</a></li>
+            <li><a href="stop.html">Stop - заблокированная страница</a></li>
+            <li>
+                <a href="redirect.html">Redirect - редирект на show.html</a>
+            </li>
+            <li><a href="subdir/">Подкаталог</a></li>
+        </ul>
+
+        <hr />
+        <p><em>Тесты mod_rewrite для nginx:</em></p>
+        <ol>
+            <li>
+                Запросите <code>.xmx</code> файл → перенаправление на index.html
+            </li>
+            <li>
+                Запросите <code>stop.html</code> → 403 Forbidden (доступ
+                запрещен)
+            </li>
+            <li>Запросите <code>redirect.html</code> → покажет show.html</li>
+        </ol>
+    </body>
+</html>

@@ -1,0 +1,8 @@
+/* WordPress Multisite Test CSS File */
+/* This file is tested via RewriteCond !-f (existing files skip routing) */
+
+body {
+    font-family: 'Arial', sans-serif;
+    margin: 0;
+    padding: 20px;
+}

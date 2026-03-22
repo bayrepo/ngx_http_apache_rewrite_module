@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# Pre-installation script - check nginx is available
+set -e
+
+if ! command -v dpkg >/dev/null 2>&1; then
+    echo "dpkg not found." >&2
+    exit 1
+fi
+
+if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ]; then
+    # Verify nginx is installed before proceeding
+    if ! command -v nginx >/dev/null 2>&1; then
+        echo "nginx is required for nginx-mod-rewrite." >&2
+        exit 1
+    fi
+
+    # Check nginx module configuration directory exists
+    if [ ! -d /etc/nginx/modules ]; then
+        mkdir -p /etc/nginx/modules || true
+    fi
+fi
+
+exit 0

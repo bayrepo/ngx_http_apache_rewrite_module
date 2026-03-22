@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Redirect - Тест mod_rewrite для nginx</title>
+    </head>
+    <body>
+        <h1>redirect.html</h1>
+        <p>Вы попали на redirect.html.</p>
+
+        <hr />
+        <ul>
+            <li><a href="index.html">На главную (index.html)</a></li>
+            <li><a href="show.html">Показать (show.html)</a></li>
+            <li><a href="stop.html">Stop - заблокированная</a></li>
+        </ul>
+
+        <hr />
+        <p>
+            <em><strong style="color: green;">Эта страница должна быть скрыта!</strong></em>
+        </p>
+        <p>
+            При обращении к redirect.html, mod_rewrite должен показать show.html вместо этой страницы.
+        </p>
+    </body>
+</html>

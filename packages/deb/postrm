@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# Post-removal script - clean up nginx module configuration
+set -e
+
+if [ "$1" = "purge" ]; then
+    # Remove module config file if it exists
+    rm -f /etc/nginx/modules/ngx_http_apache_rewrite_module.conf || true
+
+    # Optionally reload nginx to remove unneeded modules from memory
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl reload nginx.service >/dev/null 2>&1 || true
+    fi
+
+    # Alternative for non-systemd systems
+    if command -v nginx >/dev/null 2>&1; then
+        nginx -s reload >/dev/null 2>&1 || true
+    fi
+fi
+
+exit 0

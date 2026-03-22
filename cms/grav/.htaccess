@@ -1,0 +1,74 @@
+RewriteEngine On
+
+# ============================================
+# 1. Security Rules - Test malicious patterns
+# ============================================
+
+# Detect template injection (Mustache, Twig syntax)
+RewriteCond %{REQUEST_URI} ({{|}}|{%|%}) [OR]
+RewriteCond %{QUERY_STRING} ({{|}}|{%25|%25}) [OR]
+
+# Base64 encoded payloads in query string
+RewriteCond %{QUERY_STRING} base64_encode[^(]*\([^)]*\) [OR]
+
+# Script injection patterns (HTML entities decoded)
+RewriteCond %{QUERY_STRING} (<|%3C)([^s]*s)+cript.*(>|%3E) [NC,OR]
+
+# GLOBALS exploitation attempt
+RewriteCond %{QUERY_STRING} GLOBALS(=|\[|\%[0-9A-Z]{0,2}) [OR]
+
+# _REQUEST manipulation (PHP superglobal abuse)
+RewriteCond %{QUERY_STRING} _REQUEST(=|\[|\%[0-9A-Z]{0,2})
+
+# Block malicious requests with 403 Forbidden
+RewriteRule .* index.php [F]
+
+# ============================================
+# 2. Grav CMS Core Routing Rules
+# ============================================
+
+# Prevent rewriting to index.php if already there
+RewriteCond %{REQUEST_URI} !^/index\.php
+
+# Allow access to existing files
+RewriteCond %{REQUEST_FILENAME} !-f
+
+# Allow access to existing directories
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Route everything else through Grav's index.php
+RewriteRule .* index.php [L]
+
+# ============================================
+# 3. Sensitive Directory Protection
+# ============================================
+
+# Block system, cache, logs, backups folders
+RewriteRule ^(\.git|cache|bin|logs|backup|webserver-configs|tests)/(.*) error [F]
+
+# Block system and vendor directories (prevent access to .txt/.xml files)
+RewriteRule ^(system|vendor)/(.*)\.(txt|xml|md|html|json|yaml|yml|php|pl|py|cgi|twig|sh|bat)$ error [F]
+
+# Block user directory access to configuration and content files
+RewriteRule ^(user)/(.*)\.(txt|md|json|yaml|yml|php|pl|py|cgi|twig|sh|bat)$ error [F]
+
+# ============================================
+# 4. File Extension Protection
+# ============================================
+
+# Block raw .md file access (content source files)
+RewriteRule \.md$ error [F]
+
+# ============================================
+# 5. Hidden Files/Directories Protection
+# ============================================
+
+# Block hidden files except well-known/robots.txt directories
+RewriteRule (^|/)\.(?!well-known) - [F]
+
+# ============================================
+# 6. Critical Configuration File Protection
+# ============================================
+
+# Block sensitive configuration and documentation files
+RewriteRule ^(LICENSE\.txt|composer\.lock|composer\.json|\.htaccess)$ error [F]

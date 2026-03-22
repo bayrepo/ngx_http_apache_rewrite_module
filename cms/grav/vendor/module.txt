@@ -1,0 +1,1 @@
+Vendor module.txt file - should be blocked by RewriteRule ^(system|vendor)/(.*)\.(txt|xml|md|html|json|yaml|yml|php|pl|py|cgi|twig|sh|bat)$ error [F]

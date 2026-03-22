@@ -1,0 +1,1 @@
+# Joomla API test - should be allowed when accessed via /api/index.php (excluded from index.php routing)

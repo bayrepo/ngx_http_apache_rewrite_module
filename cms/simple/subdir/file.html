@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+    <head>
+        <meta charset="UTF-8" />
+        <title>File - Тест mod_rewrite для nginx</title>
+    </head>
+    <body>
+        <h1>file.html</h1>
+        <p>Вы попали на file.html в подкаталоге subdir.</p>
+
+        <hr />
+        <ul>
+            <li><a href="../index.html">На главную (index.html)</a></li>
+            <li><a href="../show.html">Показать (show.html)</a></li>
+            <li><a href="../redirect.html">Redirect</a></li>
+        </ul>
+
+        <hr />
+        <p>
+            <em><strong style="color: green;">Это страница из подкаталога!</strong></em>
+        </p>
+        <p>
+            При обращении к <code>/test/subdir/file.html</code>, mod_rewrite должен показать содержимое <code>../show.html</code>.
+        </p>
+    </body>
+</html>

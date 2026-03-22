@@ -1,0 +1,10 @@
+nginx-1.25.30
+.clangd
+.devcontainer
+Dockerfile
+logs
+nginx-1.25.3
+.zed
+tmpbuild
+
+

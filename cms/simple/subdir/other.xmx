@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Other XMX - Тест mod_rewrite для nginx</title>
+    </head>
+    <body>
+        <h1>other.xmx</h1>
+        <p>Вы попытались получить этот файл.</p>
+
+        <hr />
+        <ul>
+            <li><a href="../index.html">На главную (index.html)</a></li>
+            <li><a href="../show.html">Показать (show.html)</a></li>
+            <li><a href="file.html">File.html</a></li>
+        </ul>
+
+        <hr />
+        <p>
+            <em><strong style="color: red;">Этот файл должен быть заблокирован!</strong></em>
+        </p>
+        <p>
+            При обращении к <code>/test/subdir/other.xmx</code>, mod_rewrite должен вернуть
+            <code style="background-color: #f00; color: white;">403 Forbidden</code>.
+        </p>
+    </body>
+</html>

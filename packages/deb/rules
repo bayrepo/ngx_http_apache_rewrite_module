@@ -1,0 +1,28 @@
+#!/usr/bin/make -f
+
+# Set debhelper compat level
+DEBHELPER_COMPAT = 13
+
+export DH_COMPAT=$(DEBHELPER_COMPAT)
+export BUILD_DIR = debian/build
+export INSTALDIR = debian/nginx-mod-rewrite/usr/share/nginx/modules
+export CONFFDIR = debian/nginx-mod-rewrite/etc/nginx/modules
+
+# Set build options
+override_dh_auto_build:
+	bash package_preparer.sh download . system
+	bash package_preparer.sh build
+
+override_dh_auto_install:
+	mkdir -p $(INSTALDIR) $(CONFFDIR)
+	cp *.so $(INSTALDIR)/
+	echo 'load_module "$(INSTALDIR)/ngx_http_apache_rewrite_module.so";' > \
+	$(CONFFDIR)/ngx_http_apache_rewrite_module.conf
+
+override_dh_auto_clean:
+	rm -rf debian/build
+	rm -f *.so
+	rm -rf nginx-*
+
+%:
+	dh $@ --sourcedirectory=.

@@ -1,0 +1,68 @@
+# Как собрать Debian пакет nginx-mod-rewrite
+
+## Программа для сборки пакета
+
+Для сборки Debian/Ubuntu пакетов используется инструмент **`dpkg-buildpackage`**.
+
+```bash
+cd /home/alexey/projects/workspace-zed/test1/packages/deb
+dpkg-buildpackage -us -uc
+```
+
+Альтернативные команды:
+- `debbuild` или `debuild` - обёртки для dpkg-buildpackage
+- `fakeroot debian/rules binary` - ручной запуск сборки (для опытных пользователей)
+
+## Зависимости для сборки
+
+Перед сборкой установите необходимые пакеты:
+
+```bash
+sudo apt install debhelper-compat dh-autoreconf nginx build-essential
+```
+
+## Процесс сборки
+
+1. `dpkg-buildpackage` запускает debian/rules правила
+2. `dh` (debhelper) автоматически выполняет стандартные этапы: configure, build, install
+3. Ваш скрипт package_preparer.sh скачивает исходный код nginx и компилирует модуль
+4. Скрипты postinst/postrm обрабатывают установку/удаление в системе
+
+## Результат
+
+После успешной сборки будет создан `.deb` файл:
+- `nginx-mod-rewrite_0.1-1_amd64.deb` - пакет для установки
+
+## Установка пакета
+
+```bash
+sudo dpkg -i nginx-mod-rewrite_0.1-1_amd64.deb
+```
+
+## Структура файлов в Debian пакете
+
+| Путь | Описание |
+|------|----------|
+| `debian/control` | Метаданные пакета (имя, версия, зависимости) |
+| `debian/changelog` | История изменений пакета |
+| `debian/rules` | Скрипт сборки (makefile-like) |
+| `debian/copyright` | Информация об авторских правах и лицензии |
+| `debian/postinst` | Пост-скрипт установки (reload nginx после инсталляции) |
+| `debian/postrm` | Пост-скрипт удаления (очистка конфига nginx) |
+| `debian/triggers` | Триггеры для динамического обновления nginx модулей |
+| `modules/mod_rewrite/*` | Исходный код модуля rewrite |
+
+## Отличия от RPM spec
+
+| RPM (`nginx-mod-rewrite.spec`) | Debian (`debian/`) |
+|-------------------------------|-------------------|
+| `%define`, `%description` | `debian/control` |
+| `%prep`, `%build`, `%install` | `debian/rules + dh` |
+| `%post`, `%preinst` | `debian/postinst`, `debian/preinst` |
+| rpmbuild | dpkg-buildpackage |
+
+## Запуск сборки
+
+```bash
+cd /home/alexey/projects/workspace-zed/test1/packages/deb
+dpkg-buildpackage -us -uc -A  # Не подписываем, не используем чужие ключи, только архитектура

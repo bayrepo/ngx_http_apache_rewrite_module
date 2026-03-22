@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Show - Тест mod_rewrite для nginx</title>
+    </head>
+    <body>
+        <h1>show.html</h1>
+        <p>Вы попали на show.html.</p>
+
+        <hr />
+        <ul>
+            <li><a href="index.html">На главную (index.html)</a></li>
+            <li><a href="redirect.html">Redirect - перенаправляет сюда</a></li>
+            <li><a href="stop.html">Stop - заблокированная</a></li>
+        </ul>
+
+        <hr />
+        <p>
+            <em><strong style="color: green;">Показано вместо redirect.html!</strong></em>
+        </p>
+        <p>
+            Это страница-назначение для правила <code>RewriteRule ^redirect\.html$ show.html [L]</code>.
+        </p>
+    </body>
+</html>

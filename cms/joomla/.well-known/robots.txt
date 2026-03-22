@@ -1,0 +1,6 @@
+# This is a well-known robots.txt file for Joomla testing
+# Should be accessible via RewriteRule /api/index.php [L] or standard routing
+
+User-agent: *
+Disallow: /administrator/
+Allow: /

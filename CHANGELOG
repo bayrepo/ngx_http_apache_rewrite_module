@@ -1,0 +1,8 @@
+version: 0.1-1
+
+--
+* Sat Mar 14 2026 Alexey BayRepo <a@bayrepo.ru> - 0.1-1
+- Added debian/ubuntu build
+
+* Fri Mar 13 2026 Alexey BayRepo <a@bayrepo.ru> - 0.1-0
+- New package mod_rewrite for nginx

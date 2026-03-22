@@ -1,0 +1,1 @@
+User script.sh file - should be blocked by RewriteRule ^(user)/(.*)\.(txt|md|json|yaml|yml|php|pl|py|cgi|twig|sh|bat)$ error [F]

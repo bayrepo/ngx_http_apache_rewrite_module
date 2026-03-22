@@ -1,0 +1,1 @@
+Robots.txt file - should be ALLOWED because it matches (.well-known) exception in RewriteRule (^|/)\.(?!well-known) - [F]
