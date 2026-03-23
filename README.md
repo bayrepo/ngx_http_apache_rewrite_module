@@ -96,7 +96,7 @@ RewriteRule pattern substitution [flags]
 RewriteRule ^old-path/(.*)$ /new-path/$1 [R=301,L]
 
 # Condition-based rewrite (chain)
-RewriteCond %REQUEST_URI !^/admin/
+RewriteCond %{REQUEST_URI} !^/admin/
 RewriteRule ^admin/(.*)$ /login.php?user=$1 [NC,E,END]
 
 # In .htaccess:
@@ -141,17 +141,13 @@ RewriteCond input_string pattern [flags]
 **Examples:**
 ```nginx
 # Condition: file exists
-RewriteCond %REQUEST_FILENAME -f
+RewriteCond %{REQUEST_FILENAME} -f
 
 # Condition: not a directory
-RewriteCond %REQUEST_FILENAME !-d
+RewriteCond %{REQUEST_FILENAME} !-d
 
 # Condition: string comparison
 RewriteCond %{HTTP_HOST} ^www\.example\.com$ [NC]
-
-# Integer comparison (file size > 1024 bytes)
-RewriteCond %REQUEST_FILENAME -s
-RewriteCond %{FILESIZE} -gt 1024
 
 # Multiple conditions with OR logic
 RewriteCond %{HTTP_HOST} ^www\.example\.com$ [OR]

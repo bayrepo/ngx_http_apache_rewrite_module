@@ -97,7 +97,7 @@ RewriteRule pattern substitution [flags]
 RewriteRule ^old-path/(.*)$ /new-path/$1 [R=301,L]
 
 # Условное переписывание (цепочка)
-RewriteCond %REQUEST_URI !^/admin/
+RewriteCond %{REQUEST_URI} !^/admin/
 RewriteRule ^admin/(.*)$ /login.php?user=$1 [NC,E,END]
 
 # В .htaccess:
@@ -143,17 +143,13 @@ RewriteCond input_string pattern [flags]
 **Примеры:**
 ```nginx
 # Условие: файл существует
-RewriteCond %REQUEST_FILENAME -f
+RewriteCond %{REQUEST_FILENAME} -f
 
 # Условие: не директория
-RewriteCond %REQUEST_FILENAME !-d
+RewriteCond %{REQUEST_FILENAME} !-d
 
 # Сравнение строк
 RewriteCond %{HTTP_HOST} ^www\.example\.com$ [NC]
-
-# Сравнение целых чисел (размер файла > 1024 байт)
-RewriteCond %REQUEST_FILENAME -s
-RewriteCond %{FILESIZE} -gt 1024
 
 # Множественные условия с OR
 RewriteCond %{HTTP_HOST} ^www\.example\.com$ [OR]
