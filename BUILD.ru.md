@@ -29,6 +29,14 @@ docker run --name nginx-mod_rewrite -p 8080:80 -p 8081:8081 nginx-mod_rewrite
 bash package_preparer.sh prepare "almalinux:9"
 ```
 
+или если для дистрибутива нужна конкретная версия nginx, то такая команда:
+
+```
+bash package_preparer.sh prepare "almalinux:9" "1.30.2"
+```
+
+в этом случае будет собран модуль, для nginx=1.30.2.
+
 Сборка проверялась на образах:
 
 * almalinux:9
@@ -180,3 +188,14 @@ server {
         }
 
     }
+
+Или сборка руками с помощью сборочного скрипта, вызывать в корне проекта:
+
+```
+bash package_preparer.sh installdeps
+bash package_preparer.sh download . system
+bash package_preparer.sh build
+bash package_preparer.sh installmod
+```
+
+Нужно учитывать, чтоб будут установлены дополнительные пакеты.

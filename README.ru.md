@@ -42,6 +42,27 @@ http {
 }
 ```
 
+**Конфигурация GlobalLocation (новое):**
+Директива `GlobalLocationRewriteEngine` позволяет установить состояние движка переписывания для всех location этого сервера:
+
+```nginx
+http {
+    server {
+        GlobalLocationRewriteEngine on;
+
+        # Все location в этом сервере наследуют глобальную настройку
+
+        location /blog/ {
+            # RewriteEngine включён по умолчанию
+        }
+
+        location /static/ {
+            RewriteEngine off;  # Можно переопределить для этой локации
+        }
+    }
+}
+```
+
 ---
 
 
@@ -400,19 +421,29 @@ RewriteFallBack /handler.php?lang=ru
 
 ---
 
+### Директива GlobalLocationRewriteEngine (новое)
+Директива `GlobalLocationRewriteEngine` позволяет установить состояние движка переписывания для всех location этого сервера:
+
+1. **Область применения:** Настраивается только на уровне server внутри http контекста
+2. **Наследование:** Все новые location наследуют глобальную конфигурацию по умолчанию
+3. **Переопределение:** Отдельные location могут переопределить глобальную настройку своей собственной директивой `RewriteEngine`
+
+---
+
 ## Сводка уровней конфигурации
 
-| Директива       | http/main | server | location | .htaccess |
-|------------------|-----------|--------|----------|-----------|
-| RewriteEngine   | ✓         | ✓      | ✓        | ✓         |
-| RewriteRule     | -         | ✓      | ✓        | ✓         |
-| RewriteCond     | -         | ✓      | ✓        | ✓         |
-| RewriteBase     | -         | -      | ✓        | ✓         |
-| RewriteOptions  | ✓         | ✓      | ✓        | -         |
-| RewriteMap      | -         | ✓      | -        | -         |
-| HtaccessEnable  | ✓         | ✓      | -        | -         |
-| HtaccessName    | ✓         | ✓      | -        | -         |
-| RewriteFallBack | ✗         | ✗      | -        | ✓         |
+| Директива                     | http/main | server | location | .htaccess |
+|-------------------------------|-----------|--------|----------|-----------|
+| RewriteEngine                 | ✓         | ✓      | ✓        | ✓         |
+| GlobalLocationRewriteEngine   | -         | ✓      | -        | -         |
+| RewriteRule                   | -         | ✓      | ✓        | ✓         |
+| RewriteCond                   | -         | ✓      | ✓        | ✓         |
+| RewriteBase                   | -         | -      | ✓        | ✓         |
+| RewriteOptions                | ✓         | ✓      | ✓        | -         |
+| RewriteMap                    | -         | ✓      | -        | -         |
+| HtaccessEnable                | ✓         | ✓      | -        | -         |
+| HtaccessName                  | ✓         | ✓      | -        | -         |
+| RewriteFallBack               | ✗         | ✗      | -        | ✓         |
 
 ---
 
@@ -465,6 +496,13 @@ RewriteRule ^(.*)$ index.php?route=$1 [QSA,L]
 1. **Кеширование:** Путь отката из `.htaccess` кэшируется на каждый запрос, чтобы избежать повторного разборов.
 2. **Логика отката:** Когда `try_files` завершается неудачей, модуль перенаправляет на заданный откат вместо `/index.php`.
 3. **Сохранение строки запроса:** Исходная строка запроса сохраняется и добавляется к пути отката.
+
+### Директива GlobalLocationRewriteEngine (новое)
+Директива `GlobalLocationRewriteEngine` позволяет установить состояние движка переписывания для всех location этого сервера:
+
+1. **Область применения:** Настраивается только на уровне server внутри http контекста
+2. **Наследование:** Все новые location наследуют глобальную конфигурацию по умолчанию
+3. **Переопределение:** Отдельные location могут переопределить глобальную настройку своей собственной директивой `RewriteEngine`
 ```
 
 ---

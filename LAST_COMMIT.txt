@@ -1,5 +1,5 @@
-commit 6bebc873236262c53be60e441af28733b922fd9e (HEAD -> master, origin/master)
+commit 1b37117a096fb4a7892715ce6775eb68b31b8922 (HEAD -> master, origin/master)
 Author: Alexey Berezhok <a@bayrepo.ru>
-Date:   Sun Apr 19 19:12:47 2026 +0300
+Date:   Sat Jun 27 00:32:35 2026 +0300
 
-    Added missing Dockerfile
+    Update documentation

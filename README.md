@@ -15,6 +15,54 @@ The following directives are available in this module:
 | Context        | Available Levels                            |
 |----------------|---------------------------------------------|
 | `main`, `server`, `location` | ✓ All three levels supported |
+| `GlobalLocation` | ✓ Global location level (new) |
+
+**Syntax:**
+```nginx
+RewriteEngine on|off
+```
+
+**Possible Values:**
+- `on`  - Enable rewrite engine
+- `off` - Disable rewrite engine (default)
+
+**Example in nginx.conf:**
+```nginx
+http {
+    server {
+        RewriteEngine on;
+
+        location /blog/ {
+            # Rules apply here
+        }
+
+        location /static/ {
+            RewriteEngine off;  # Disable for this location
+        }
+    }
+}
+```
+
+**GlobalLocation Configuration (new):**
+The `GlobalLocationRewriteEngine` directive allows setting the rewrite engine state for server-level locations:
+
+```nginx
+http {
+    server {
+        GlobalLocationRewriteEngine on;
+
+        # All locations in this server inherit the global setting
+
+        location /blog/ {
+            # RewriteEngine is enabled by default
+        }
+
+        location /static/ {
+            RewriteEngine off;  # Override for this location if needed
+        }
+    }
+}
+```
 
 **Syntax:**
 ```nginx
@@ -395,17 +443,18 @@ RewriteFallBack /handler.php?lang=ru
 
 ## Configuration Levels Summary
 
-| Directive       | http/main | server | location | .htaccess |
-|-----------------|-----------|--------|----------|-----------|
-| RewriteEngine   | ✓         | ✓      | ✓        | ✓         |
-| RewriteRule     | -         | ✓      | ✓        | ✓         |
-| RewriteCond     | -         | ✓      | ✓        | ✓         |
-| RewriteBase     | -         | -      | ✓        | ✓         |
-| RewriteOptions  | ✓         | ✓      | ✓        | -         |
-| RewriteMap      | -         | ✓      | -        | -         |
-| HtaccessEnable  | ✓         | ✓      | -        | -         |
-| HtaccessName    | ✓         | ✓      | -        | -         |
-| RewriteFallBack | ✗         | ✗      | -        | ✓         |
+| Directive                | http/main | server | location | .htaccess |
+|--------------------------|-----------|--------|----------|-----------|
+| RewriteEngine            | ✓         | ✓      | ✓        | ✓         |
+| GlobalLocationRewriteEngine | -     | ✓      | -        | -         |
+| RewriteRule              | -         | ✓      | ✓        | ✓         |
+| RewriteCond              | -         | ✓      | ✓        | ✓         |
+| RewriteBase              | -         | -      | ✓        | ✓         |
+| RewriteOptions           | ✓         | ✓      | ✓        | -         |
+| RewriteMap               | -         | ✓      | -        | -         |
+| HtaccessEnable           | ✓         | ✓      | -        | -         |
+| HtaccessName             | ✓         | ✓      | -        | -         |
+| RewriteFallBack          | ✗         | ✗      | -        | ✓         |
 
 ---
 
@@ -455,6 +504,15 @@ The `RewriteFallBack` directive allows customizing the fallback path used when a
 1. **Caching:** The fallback path from `.htaccess` is cached per request to avoid repeated parsing
 2. **Fallback Logic:** When `try_files` fails, the module redirects to the configured fallback instead of `/index.php`
 3. **Query String Preservation:** Original query string is preserved and appended to fallback path
+
+---
+
+### GlobalLocationRewriteEngine Directive (new)
+The `GlobalLocationRewriteEngine` directive allows setting the rewrite engine state for server-level locations:
+
+1. **Scope:** Configured only at the server block level within http context
+2. **Inheritance:** All new locations inherit the global configuration by default
+3. **Override Support:** Individual locations can still override the global setting with their own `RewriteEngine` directive
 
 ---
 

@@ -29,6 +29,14 @@ To build the package, run the command:
 bash package_preparer.sh prepare "almalinux:9"
 ```
 
+or if a specific nginx version is required for the distribution, use this command:
+
+```
+bash package_preparer.sh prepare "almalinux:9" "1.30.2"
+```
+
+in this case the module will be built for nginx=1.30.2.
+
 The build was tested on the following images:
 
 * almalinux:9
@@ -180,3 +188,14 @@ server {
 
     }
 ```
+
+Or build manually using the build script, call it from the project root:
+
+```
+bash package_preparer.sh installdeps
+bash package_preparer.sh download . system
+bash package_preparer.sh build
+bash package_preparer.sh installmod
+```
+
+You need to ensure that additional packages will be installed.

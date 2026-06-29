@@ -223,6 +223,8 @@ typedef struct {
     /* Fallback to index.php with query string after try_files miss */
     ngx_int_t       fallback_to_index;    // 0|1: enable fallback mechanism
     unsigned        fallback_to_index_set:1;
+    ngx_int_t       glstate;
+    unsigned        glstate_set:1;
 } ngx_http_apache_rewrite_srv_conf_t;
 
 /*

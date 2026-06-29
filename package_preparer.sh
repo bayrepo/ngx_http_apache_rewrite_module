@@ -47,6 +47,7 @@ function download_nginx() {
             exit 1
         fi
     fi
+    echo "Built for nginx ${NGINX_VER}" > BUILDINFO.txt
 }
 
 COMMAND="$1"
@@ -56,6 +57,7 @@ case "$COMMAND" in
 prepare)
 
     DOCKER_IMAGE="$2"
+    NGINX_CUSTOM_VER="$3"
 
     if [ -z "$DOCKER_IMAGE" ]; then
         echo "Set docker image for build"
@@ -82,7 +84,7 @@ prepare)
         --transform='s,^,nginx-mod-rewrite-'$pkg_ver'/modules/,'
 
     tar -rf "tmpbuild/nginx-mod-rewrite-$pkg_ver.tar" \
-        -C . LICENSE package_preparer.sh \
+        -C . LICENSE package_preparer.sh extract_nginx_args.py \
         --transform='s,^,nginx-mod-rewrite-'$pkg_ver'/,'
 
     gzip -f "tmpbuild/nginx-mod-rewrite-$pkg_ver.tar"
@@ -153,6 +155,9 @@ EOF
     # Copy Dockerfile into tmpbuild and replace placeholder image name
     cp packages/Dockerfile tmpbuild/Dockerfile
     sed -i "s|^FROM image|FROM ${DOCKER_IMAGE}|g" tmpbuild/Dockerfile
+    if [ -n "$NGINX_CUSTOM_VER" ]; then
+        sed -i "s|^ENTRYPOINT \[ \"bash\", \"package_preparer.sh\", \"packageprep\" \]|ENTRYPOINT [ \"bash\", \"package_preparer.sh\", \"packageprep\", \"$NGINX_CUSTOM_VER\" ]|g" tmpbuild/Dockerfile
+    fi
 
     # Build a temporary Docker image based on the provided base image
     docker build -t tmpbuild_image -f tmpbuild/Dockerfile .
@@ -167,27 +172,113 @@ EOF
 download)
     download_nginx "$2" "$3"
 ;;
-packageprep)
-    PKG_MGR=""
+installdeps)
     # Determine package manager and install nginx
     if command -v dnf >/dev/null 2>&1; then
         PKG_MGR="dnf"
-        $PKG_MGR install -y nginx openssl-devel pcre-devel zlib-devel rpm-build gcc gcc-c++ make wget
+        $PKG_MGR install -y nginx openssl-devel pcre-devel zlib-devel rpm-build gcc gcc-c++ make wget python3
     elif command -v yum >/dev/null 2>&1; then
         PKG_MGR="yum"
-        $PKG_MGR install -y nginx openssl-devel pcre-devel zlib-devel rpm-build gcc gcc-c++ make wget
+        $PKG_MGR install -y nginx openssl-devel pcre-devel zlib-devel rpm-build gcc gcc-c++ make wget python3
     elif command -v apt-get >/dev/null 2>&1; then
         PKG_MGR="apt-get"
         apt-get update
-        $PKG_MGR install -y nginx debhelper-compat dh-autoreconf libssl-dev libpcre2-dev zlib1g-dev make gcc build-essential wget
+        $PKG_MGR install -y nginx debhelper-compat dh-autoreconf libssl-dev libpcre2-dev zlib1g-dev make gcc build-essential wget python3
+    else
+        echo "Unsupported package manager."
+        exit 1
+    fi
+;;
+installmod)
+    if command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+        mkdir -p /usr/share/nginx/modules /usr/lib64/nginx/modules/
+        cp *.so /usr/lib64/nginx/modules/
+        echo 'load_module "/usr/lib64/nginx/modules/ngx_http_apache_rewrite_module.so";' \
+            > /usr/share/nginx/modules/ngx_http_apache_rewrite_module.conf
+    else
+        mkdir -p /usr/share/nginx/modules/ /etc/nginx/modules
+        cp *.so /usr/share/nginx/modules/
+        echo 'load_module "/usr/share/nginx/modules/ngx_http_apache_rewrite_module.so";' \
+            > /etc/nginx/modules/ngx_http_apache_rewrite_module.conf
+    fi
+;;
+packageprep)
+    PKG_MGR=""
+    NGINX_CUSTOM_VER="$2"
+
+    # Determine package manager and install nginx
+    if command -v dnf >/dev/null 2>&1; then
+        PKG_MGR="dnf"
+        $PKG_MGR install -y nginx openssl-devel pcre-devel zlib-devel rpm-build gcc gcc-c++ make wget python3
+    elif command -v yum >/dev/null 2>&1; then
+        PKG_MGR="yum"
+        $PKG_MGR install -y nginx openssl-devel pcre-devel zlib-devel rpm-build gcc gcc-c++ make wget python3
+    elif command -v apt-get >/dev/null 2>&1; then
+        PKG_MGR="apt-get"
+        apt-get update
+        $PKG_MGR install -y nginx debhelper-compat dh-autoreconf libssl-dev libpcre2-dev zlib1g-dev make gcc build-essential wget python3
     else
         echo "Unsupported package manager."
         exit 1
     fi
 
+    # Auto-detect nginx version if not specified by user
+    DETECTED_NGINX_VERSION=""
+    if [ -z "$NGINX_CUSTOM_VER" ] || [ "$NGINX_CUSTOM_VER" == "." ]; then
+        echo "Auto-detecting nginx version..."
+
+        if command -v rpm >/dev/null 2>&1; then
+            # RPM-based systems: detect via package manager and runtime
+            PKG_VERSION=$(rpm -q nginx --queryformat '%{VERSION}' 2>/dev/null)
+            RUNTIME_VERSION=$(nginx -V 2>&1 | grep 'version:' | head -n 1 | sed -n 's/.*nginx\/\(.*\).*/\1/p')
+
+            if [ -n "$RUNTIME_VERSION" ]; then
+                DETECTED_NGINX_VERSION="$RUNTIME_VERSION"
+            elif [ -n "$PKG_VERSION" ]; then
+                # Fallback to package version (strip release part)
+                DETECTED_NGINX_VERSION=$(echo "$PKG_VERSION" | cut -d'-' -f1)
+            fi
+        elif command -v dpkg >/dev/null 2>&1; then
+            # Debian-based systems
+            PKG_VERSION=$(dpkg-query -W -f='${Version}\n' nginx 2>/dev/null | head -n 1)
+            RUNTIME_VERSION=$(nginx -V 2>&1 | grep 'version:' | head -n 1 | sed -n 's/.*nginx\/\(.*\).*/\1/p')
+
+            if [ -n "$RUNTIME_VERSION" ]; then
+                DETECTED_NGINX_VERSION="$RUNTIME_VERSION"
+            elif [ -n "$PKG_VERSION" ]; then
+                # Handle Debian version format (e.g., "1.24.0-1ubuntu1.1" -> "1.24.0")
+                DETECTED_NGINX_VERSION=$(echo "$PKG_VERSION" | cut -d'-' -f1)
+            fi
+        else
+            echo "Error: Unsupported package manager. Unable to auto-detect nginx version."
+            exit 1
+        fi
+
+        if [ -n "$DETECTED_NGINX_VERSION" ]; then
+            echo "Detected nginx version: $DETECTED_NGINX_VERSION"
+        else
+            echo "Warning: Could not detect nginx version. Using generic download."
+        fi
+    else
+        echo "Using custom nginx version: $NGINX_CUSTOM_VER"
+    fi
+
     if [ "$PKG_MGR" == "yum" -o "$PKG_MGR" == "dnf" ]; then
         mkdir -p rpmbuild/BUILD rpmbuild/BUILDROOT rpmbuild/RPMS rpmbuild/SOURCES rpmbuild/SPECS rpmbuild/SRPMS
         cp packages/rpm/nginx-mod-rewrite.spec rpmbuild/SPECS
+
+        # Determine nginx version to use in spec file
+        if [ -n "$NGINX_CUSTOM_VER" ]; then
+            NGINX_VER_FOR_SPEC="$NGINX_CUSTOM_VER"
+        elif [ -n "$DETECTED_NGINX_VERSION" ]; then
+            NGINX_VER_FOR_SPEC="$DETECTED_NGINX_VERSION"
+        fi
+
+        # Modify spec file to use detected/custom nginx version
+        if [ -n "$NGINX_VER_FOR_SPEC" ]; then
+            sed -i "s|%global nginx_version .*|%global nginx_version $NGINX_VER_FOR_SPEC|" rpmbuild/SPECS/nginx-mod-rewrite.spec
+        fi
+
         cp nginx-mod-rewrite-*.tar.gz rpmbuild/SOURCES
         rpmbuild --define='_topdir /app/rpmbuild' -ba rpmbuild/SPECS/nginx-mod-rewrite.spec
         cp rpmbuild/RPMS/x86_64/* /app/tmpbuild
@@ -213,6 +304,16 @@ packageprep)
         # Extract, stripping the top-level directory
         tar --strip-components=1 -xzf "$(basename "$TARBALL")"
 
+        # Use custom nginx version if specified, otherwise use auto-detected
+        NGINX_VER="${NGINX_CUSTOM_VER:-${DETECTED_NGINX_VERSION:-1.24.0}}"
+
+        # Generate debian/control with correct nginx version
+        bash control.sh "$NGINX_VER"
+
+        if [ -n "$NGINX_CUSTOM_VER" ]; then
+            sed -i "s|bash package_preparer.sh download . system|bash package_preparer.sh download \"$NGINX_CUSTOM_VER\"|g" rules
+        fi
+
         dpkg-buildpackage -us -uc
 
         cp ../nginx-mod-rewrite* /app/tmpbuild
@@ -228,13 +329,6 @@ build)
         exit 1
     fi
 
-    NGINX_VER_OUTPUT=$(nginx -V 2>&1)
-    CONFIG_ARGS=$(echo "$NGINX_VER_OUTPUT" | awk -F'configure arguments: ' '{print $2}')
-    if [ -z "$CONFIG_ARGS" ]; then
-        echo "Could not retrieve nginx configuration arguments."
-        exit 1
-    fi
-
     echo "Retrieved configure arguments: $CONFIG_ARGS"
 
     # Change to nginx source directory
@@ -245,9 +339,8 @@ build)
     fi
     cd "$SRC_DIR" || exit 1
 
-    # Run configure with saved arguments and add mod_rewrite
-    read -ra CONFIG_ARRAY <<< "$CONFIG_ARGS"
-    ./configure "${CONFIG_ARRAY[@]}" --add-dynamic-module=../modules/mod_rewrite
+
+    python3 ../extract_nginx_args.py
     make modules
     cp objs/ngx_http_apache_rewrite_module.so ../
 ;;

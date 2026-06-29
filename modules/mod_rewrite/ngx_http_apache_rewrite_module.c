@@ -35,6 +35,8 @@ static ngx_int_t ngx_http_apache_rewrite_postconfiguration(ngx_conf_t *cf);
 
 static char *ngx_http_rewrite_engine(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
+static char *ngx_http_rewrite_engine_global(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf);
 static char *ngx_http_rewrite_rule(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *ngx_http_rewrite_cond(ngx_conf_t *cf, ngx_command_t *cmd,
@@ -89,6 +91,12 @@ static ngx_command_t ngx_http_apache_rewrite_commands[] = {
     { ngx_string("RewriteEngine"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
       ngx_http_rewrite_engine,
+      0,
+      0,
+      NULL },
+    { ngx_string("GlobalLocationRewriteEngine"),
+      NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
+      ngx_http_rewrite_engine_global,
       0,
       0,
       NULL },
@@ -272,13 +280,11 @@ ngx_http_apache_rewrite_merge_srv_conf(ngx_conf_t *cf,
     return NGX_CONF_OK;
 }
 
-
-static void *
-ngx_http_apache_rewrite_create_loc_conf(ngx_conf_t *cf)
-{
+static ngx_http_apache_rewrite_loc_conf_t *
+ngx_http_apache_rewrite_create_loc_conf_(ngx_pool_t *pool){
     ngx_http_apache_rewrite_loc_conf_t *conf;
 
-    conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_apache_rewrite_loc_conf_t));
+    conf = ngx_pcalloc(pool, sizeof(ngx_http_apache_rewrite_loc_conf_t));
     if (conf == NULL) {
         return NULL;
     }
@@ -286,8 +292,8 @@ ngx_http_apache_rewrite_create_loc_conf(ngx_conf_t *cf)
     conf->state = ENGINE_DISABLED;
     conf->options = OPTION_NONE;
 
-    conf->rules = ngx_array_create(cf->pool, 4, sizeof(ngx_rewrite_rule_t));
-    conf->pending_conds = ngx_array_create(cf->pool, 4,
+    conf->rules = ngx_array_create(pool, 4, sizeof(ngx_rewrite_rule_t));
+    conf->pending_conds = ngx_array_create(pool, 4,
                                            sizeof(ngx_rewrite_cond_t));
 
     if (conf->rules == NULL || conf->pending_conds == NULL) {
@@ -297,6 +303,12 @@ ngx_http_apache_rewrite_create_loc_conf(ngx_conf_t *cf)
     ngx_str_null(&conf->baseurl);
 
     return conf;
+}
+
+static void *
+ngx_http_apache_rewrite_create_loc_conf(ngx_conf_t *cf)
+{
+    return ngx_http_apache_rewrite_create_loc_conf_(cf->pool);
 }
 
 
@@ -775,6 +787,9 @@ ngx_htaccess_search_upward(ngx_http_request_t *r, u_char *docroot, size_t docroo
     u_char *path_buf = (u_char *)ngx_palloc(r->pool, current_path->len + 1 + htaccess_name_len);
     size_t  current_pos;
 
+    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+               "mod_rewrite: try to find .htaccess %s, uri=\"%V\"", path_buf, &r->uri);
+
     if (!path_buf) {
         return NGX_ERROR;
     }
@@ -792,6 +807,8 @@ ngx_htaccess_search_upward(ngx_http_request_t *r, u_char *docroot, size_t docroo
     /* Iterate upward from current directory up to docroot */
     while (1) {
         /* Check if file exists at this level */
+        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "mod_rewrite: try to find(1) .htaccess %s, uri=\"%V\"", path_buf, &r->uri);
         struct stat st;
         if (stat((char *)path_buf, &st) == 0 && ngx_is_file(&st)) {
             /* Found .htaccess! */
@@ -812,6 +829,8 @@ ngx_htaccess_search_upward(ngx_http_request_t *r, u_char *docroot, size_t docroo
 
         if (last_slash == NULL) {
             /* Reached DocRoot without finding htaccess */
+            ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "mod_rewrite: try to find .htaccess %s, uri=\"%V\" error(1)", path_buf, &r->uri);
             return NGX_ERROR;
         }
 
@@ -820,6 +839,8 @@ ngx_htaccess_search_upward(ngx_http_request_t *r, u_char *docroot, size_t docroo
 
         if (current_pos < docroot_len) {
             /* Reached or passed DocRoot - no htaccess found */
+            ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "mod_rewrite: try to find .htaccess %s, uri=\"%V\" error(2)", path_buf, &r->uri);
             return NGX_ERROR;
         }
 
@@ -1485,6 +1506,7 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
     ngx_str_t baseurl_htacess = ngx_null_string;
     ngx_int_t options_htaccess = -1;
     ngx_int_t state_htaccess = -1;
+    ngx_int_t global_enabled = 0;
 
     (void)options_htaccess;
 
@@ -1492,12 +1514,30 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
     sconf = ngx_http_get_module_srv_conf(r, ngx_http_apache_rewrite_module);
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
-    if (lcf == NULL || lcf->state != ENGINE_ENABLED) {
-        return NGX_DECLINED;
+    if (sconf != NULL && sconf->glstate_set == 1 && sconf->glstate == ENGINE_ENABLED) {
+        global_enabled = 1;
     }
+
+    if (lcf == NULL || lcf->state != ENGINE_ENABLED) {
+        if (global_enabled == 1) {
+            if (lcf == NULL) {
+                lcf = ngx_http_apache_rewrite_create_loc_conf_(r->pool);
+            }
+            if (lcf == NULL) {
+                return NGX_DECLINED;
+            }
+        } else {
+            return NGX_DECLINED;
+        }
+    }
+
+    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "mod_rewrite: location handler engine enabled in location, uri=\"%V\"", &r->uri);
 
     /* Check htaccess parsing enable */
     if (!sconf->htaccess_enable_set || sconf->htaccess_enable != 1) {
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "mod_rewrite: location handler htaccess disabled, uri=\"%V\"", &r->uri);
         /* Use only location rules */
         if (lcf->rules->nelts == 0) {
             return NGX_DECLINED;
@@ -1533,20 +1573,56 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
     u_char *htaccess_name = sconf->htaccess_name.data ? (u_char *)sconf->htaccess_name.data : (u_char *)".htaccess";
     size_t htaccess_name_len = sconf->htaccess_name.data ? sconf->htaccess_name.len : 9;
 
-    /* Build initial path: docroot + r->uri */
     ngx_str_t current_path;
-    rc = ngx_htaccess_build_path(r, clcf->root.data, clcf->root.len, &current_path, htaccess_name, htaccess_name_len);
+    ngx_str_t evaluated_root = {0, NULL};
+    size_t evaluated_root_len = 0;
+
+    /* Check if root contains variables and evaluate them */
+    if (clcf->root_lengths != NULL) {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "mod_rewrite: root has script variables, evaluating");
+
+        /* Run the script to evaluate variables in clcf->root */
+        if (ngx_http_script_run(r, &evaluated_root,
+                                clcf->root_lengths->elts, 0,
+                                clcf->root_values->elts) == NULL) {
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                          "mod_rewrite: failed to evaluate root path script");
+            return NGX_ERROR;
+        }
+
+        evaluated_root_len = evaluated_root.len > 0 ? evaluated_root.len : 0;
+
+        /* LOG: Show evaluated root */
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "mod_rewrite: evaluated root path len=%uz", evaluated_root_len);
+    } else {
+        /* LOG: No script variables in root */
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "mod_rewrite: root has no script variables, using clcf->root directly");
+    }
+
+    /* Build initial path: docroot + r->uri using evaluated or original root */
+    rc = ngx_htaccess_build_path(r,
+                                  evaluated_root.data ? evaluated_root.data : clcf->root.data,
+                                  evaluated_root.len > 0 ? evaluated_root.len : clcf->root.len,
+                                  &current_path, htaccess_name, htaccess_name_len);
 
     ngx_str_t htaccess_docroot = ngx_null_string;
 
     /* Remove last component (filename) to search from parent directory */
     if (rc == NGX_OK && current_path.len > 0) {
 
-        /* Search upward for .htaccess file */
-        rc = ngx_htaccess_search_upward(r, clcf->root.data, clcf->root.len, &current_path,
-                                        htaccess_name, htaccess_name_len, &htaccess_path);
+        /* Search upward for .htaccess file - use evaluated root here too! */
+        rc = ngx_htaccess_search_upward(r,
+                                        evaluated_root.data ? evaluated_root.data : clcf->root.data,
+                                        evaluated_root.len > 0 ? evaluated_root.len : clcf->root.len,
+                                        &current_path, htaccess_name, htaccess_name_len,
+                                        &htaccess_path);
 
         if (rc == NGX_ERROR) {
+                ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                           "mod_rewrite: location handler .htaccess not found, uri=\"%V\"", &r->uri);
                 /* File not found — use only location rules */
                 ctx = ngx_http_get_module_ctx(r, ngx_http_apache_rewrite_module);
                 if (ctx && ctx->end) {
@@ -1558,18 +1634,35 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
                 return ngx_process_rules_result(rc, ctx, r, 0);
         }
 
-        htaccess_docroot.data = ngx_pcalloc(r->pool, htaccess_path.len);
-        size_t htaccess_docroot_vlen = htaccess_path.len - (clcf->root.len + 1) - htaccess_name_len;
-        if ((long)htaccess_docroot_vlen < 0) htaccess_docroot_vlen = 0;
-        ngx_memcpy(htaccess_docroot.data, htaccess_path.data + clcf->root.len + 1, htaccess_docroot_vlen);
+        /* LOG: Show found htaccess path */
+        if (rc == NGX_OK && htaccess_path.data) {
+            ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                           "mod_rewrite: found .htaccess at: %V", &htaccess_path);
+        } else {
+            ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                           "mod_rewrite: .htaccess not found, uri=%V", &r->uri);
+        }
 
-        htaccess_docroot.len = htaccess_path.len - (clcf->root.len + 1) - htaccess_name_len;
+        /* Extract htaccess_docroot path - now correctly works with evaluated root */
+        size_t used_root_len = (evaluated_root.len > 0) ? evaluated_root.len : clcf->root.len;
+
+        htaccess_docroot.data = ngx_pcalloc(r->pool, htaccess_path.len);
+        size_t htaccess_docroot_vlen = htaccess_path.len - (used_root_len + 1) - htaccess_name_len;
+        if ((long)htaccess_docroot_vlen < 0) htaccess_docroot_vlen = 0;
+        ngx_memcpy(htaccess_docroot.data, htaccess_path.data + used_root_len + 1, htaccess_docroot_vlen);
+
+        htaccess_docroot.len = htaccess_path.len - (used_root_len + 1) - htaccess_name_len;
+    } else {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "mod_rewrite: failed to build current path for .htaccess search");
     }
 
     /* Check if htaccess file exists */
     struct stat st;
     if (!htaccess_path.data || stat((char *)htaccess_path.data, &st) == -1) {
         /* File does not exist — use only location rules */
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "mod_rewrite: location handler .htaccess nto found by stat, uri=\"%V\"", &r->uri);
         if (lcf->rules->nelts == 0) {
             return NGX_DECLINED;
         }
@@ -1641,6 +1734,9 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
     /* If no cached rules, parse .htaccess file */
     if (combined_rules == NULL) {
 
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "mod_rewrite: location handler rules from .htaccess not in cache reread, .htaccess=\"%V\"", &htaccess_path);
+
         parsed_rules = ngx_htaccess_parse_file_from_ha(r, &htaccess_path);
 
         if (!parsed_rules){
@@ -1660,10 +1756,16 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
         /* Store in cache — add/update entry in linked list */
         ngx_htaccess_update_cache(r, htaccess_path, st.st_mtime, parsed_rules);
 
+    } else {
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "mod_rewrite: location handler get rules from cache .htaccess, .htaccess=\"%V\"", &htaccess_path);
     }
 
     if (state_htaccess == ENGINE_DISABLED)
         return NGX_DECLINED;
+
+    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "mod_rewrite: location handler engine enabled in .htaccess, .htaccess=\"%V\"", &htaccess_path);
 
     /* Ensure ctx exists */
     if (ctx == NULL) {
@@ -1685,7 +1787,8 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
 
     /* Combine location rules with .htaccess rules (.htaccess has priority - added first) */
     ngx_int_t final_rc;
-
+    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "mod_rewrite: location handler rules from .htaccess found %d, .htaccess=\"%V\"", combined_rules->nelts, &htaccess_path);
     if (combined_rules->nelts > 0 && lcf->rules->nelts > 0) {
         /* Create combined array: htaccess rules first, then location rules */
         ngx_array_t *final_rules = ngx_array_create(r->pool,
@@ -2171,6 +2274,48 @@ ngx_http_rewrite_engine(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         /* Непредвиденный контекст */
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
             "RewriteEngine: unexpected context");
+        return NGX_CONF_ERROR;
+    }
+
+    return NGX_CONF_OK;
+}
+
+/*
+ * GlobalLocationRewriteEngine on|off
+ */
+static char *
+ngx_http_rewrite_engine_global(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_str_t                          *value;
+    ngx_http_apache_rewrite_srv_conf_t *sconf = NULL;
+
+    value = cf->args->elts;
+
+    /* Определяем контекст: проверяем cmd_type */
+    if (cf->cmd_type & NGX_HTTP_SRV_CONF) {
+        /* Server контекст */
+        sconf = ngx_http_conf_get_module_srv_conf(cf,
+                    ngx_http_apache_rewrite_module);
+        if (sconf == NULL) {
+            return NGX_CONF_OK;
+        }
+
+        if (ngx_strcasecmp(value[1].data, (u_char *) "on") == 0) {
+            sconf->glstate = ENGINE_ENABLED;
+            sconf->glstate_set = 1;
+        } else if (ngx_strcasecmp(value[1].data, (u_char *) "off") == 0) {
+            sconf->glstate = ENGINE_DISABLED;
+            sconf->glstate_set = 1;
+        } else {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                "GlobalLocationRewriteEngine: invalid value \"%V\"", &value[1]);
+            return NGX_CONF_ERROR;
+        }
+
+    } else {
+        /* Непредвиденный контекст */
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+            "GlobalLocationRewriteEngine: unexpected context");
         return NGX_CONF_ERROR;
     }
 

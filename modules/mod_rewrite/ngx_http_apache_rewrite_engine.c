@@ -479,12 +479,11 @@ ngx_rewrite_apply_rule(ngx_rewrite_rule_t *rule, ngx_rewrite_ctx_t *ctx, ngx_str
                    "mod_rewrite: rewrite \"%V\" -> \"%V\" (flags=0x%xd, code=%d)",
                    &ctx->uri, &newuri, rule->flags, rule->forced_responsecode);
 
-    /* Split out query string */
-    {
-        ngx_str_t  new_args = r->args;
-        ngx_rewrite_splitout_queryargs(r, &newuri, rule->flags, &new_args);
-        r->args = new_args;
-    }
+
+    ngx_str_t  new_args = r->args;
+    ngx_rewrite_splitout_queryargs(r, &newuri, rule->flags, &new_args);
+    r->args = new_args;
+
 
     /* Check for absolute URI → redirect */
     if (rule->flags & RULEFLAG_FORCEREDIRECT) {
@@ -539,7 +538,7 @@ ngx_rewrite_apply_rule(ngx_rewrite_rule_t *rule, ngx_rewrite_ctx_t *ctx, ngx_str
                 }
             }
 
-            len = scheme.len + 3 + host.len + newuri.len + 3;
+            len = scheme.len + 3 + host.len + newuri.len + 3 + new_args.len + 2;
             if (port) {
                 len += 6; /* :NNNNN */
             }
@@ -568,6 +567,10 @@ ngx_rewrite_apply_rule(ngx_rewrite_rule_t *rule, ngx_rewrite_ctx_t *ctx, ngx_str
                     *p++ = '/';
                 }
                 p = ngx_cpymem(p, newuri.data, newuri.len);
+                if (new_args.len > 0) {
+                    *p++ = '?';
+                    p = ngx_cpymem(p, new_args.data, new_args.len);
+                }
                 newuri.data = start;
                 newuri.len = p - start;
             }
@@ -587,8 +590,32 @@ ngx_rewrite_apply_rule(ngx_rewrite_rule_t *rule, ngx_rewrite_ctx_t *ctx, ngx_str
         }
 
         ctx->redirect_url = newuri;
+
+        /* Append old query args if present */
+        if (new_args.len > 0 && ctx->redirect_url.data != NULL && ctx->redirect_url.len > 0) {
+            u_char *tmp_data;
+            size_t combined_len = ctx->redirect_url.len + 1 + new_args.len;
+            tmp_data = ngx_pnalloc(r->pool, combined_len);
+            if (tmp_data) {
+                u_char *start = tmp_data;
+                tmp_data = ngx_cpymem(tmp_data, ctx->redirect_url.data, ctx->redirect_url.len);
+                *tmp_data++ = '&';
+                tmp_data = ngx_cpymem(tmp_data, new_args.data, new_args.len);
+                ctx->redirect_url.data = start;
+                ctx->redirect_url.len = combined_len;
+            }
+        }
+
         ctx->redirect_code = code;
+        /* Update URI to include appended args (for subsequent processing) */
         ctx->uri = newuri;
+        if (ctx->redirect_url.len > 0 && ctx->redirect_url.data != NULL
+            && ngx_strcmp(ctx->uri.data, ctx->redirect_url.data) != 0) {
+            /* redirect_url has more data (args appended), copy it */
+            ctx->uri.data = ctx->redirect_url.data;
+            ctx->uri.len = ctx->redirect_url.len;
+        }
+
         return RULE_RC_MATCH;
     }
 
@@ -628,6 +655,7 @@ ngx_rewrite_apply_rule(ngx_rewrite_rule_t *rule, ngx_rewrite_ctx_t *ctx, ngx_str
     }
 
     ctx->uri = newuri;
+
     ngx_str_null(&ctx->redirect_url);
     ctx->redirect_code = 0;
 

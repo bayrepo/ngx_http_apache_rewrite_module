@@ -1,0 +1,14 @@
+Source: nginx-mod-rewrite
+Section: web
+Priority: optional
+Maintainer: Alexey Berezhok <a@bayrepo.ru>
+Build-Depends: debhelper (>= 13), bash, openssl-dev, libssl-dev
+Standards-Version: 4.7.0
+Homepage: https://docs.brepo.ru/nginx-mod_rewrite
+
+Package: nginx-mod-rewrite
+Architecture: any
+Depends: ${shlibs:Depends}, nginx (>= 1.4.0)
+Provides: nginx-http-module, nginx-apache-rewrite
+Description: Nginx rewrite module – dynamic module adding mod_rewrite functionality
+ Dynamic Nginx module implementing Apache mod_rewrite functionality.

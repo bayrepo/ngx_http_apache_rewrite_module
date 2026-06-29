@@ -1,6 +1,8 @@
 %define name nginx-mod-rewrite
 %define version 0.1
 %define release 1%{?dist}
+%global nginx_version ${NGINX_CUSTOM_VER:-$(rpm -q nginx --queryformat '%{VERSION}' | cut -d'-' -f1)}
+
 %define summary "Nginx rewrite module – dynamic module adding mod_rewrite functionality"
 %define license Apache-2.0
 %define url https://docs.brepo.ru/nginx-mod-rewrite
@@ -21,7 +23,7 @@ BuildRequires:  pcre-devel
 BuildRequires:  zlib-devel
 BuildRequires:  bash
 BuildRequires:  wget
-Requires:       nginx
+Requires:       nginx=%{nginx_version}
 
 %description
 Dynamic Nginx module implementing Apache mod_rewrite functionality.
@@ -37,7 +39,8 @@ bash package_preparer.sh build
 
 %install
 # Install only the dynamic module
-mkdir -p %{buildroot}%{nginx_moduledir} %{buildroot}%{nginx_moduleconfdir}
+mkdir -p %{buildroot}%{nginx_moduledir} %{buildroot}%{nginx_moduleconfdir} \
+%{buildroot}%{_datarootdir}/info/
 cp *.so %{buildroot}%{nginx_moduledir}
 echo 'load_module "%{nginx_moduledir}/ngx_http_apache_rewrite_module.so";' \
     > %{buildroot}%{nginx_moduleconfdir}/ngx_http_apache_rewrite_module.conf
@@ -49,7 +52,7 @@ fi
 
 
 %files
-%license LICENSE
+%license LICENSE BUILDINFO.txt
 
 %attr(0640,root,root) %{nginx_moduleconfdir}/ngx_http_apache_rewrite_module.conf
 %attr(0755,root,root) %{nginx_moduledir}/ngx_http_apache_rewrite_module.so
