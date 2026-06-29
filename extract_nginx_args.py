@@ -109,7 +109,7 @@ def main(nginx_src_dir="."):
 
             # Добавляем наш модуль в конец
             args_list.append("--add-dynamic-module=../modules/mod_rewrite")
-            args_list.append("--with-debug")
+            #args_list.append("--with-debug")
 
             print(f"Added --add-dynamic-module=../modules/mod_rewrite", file=sys.stderr)
 
