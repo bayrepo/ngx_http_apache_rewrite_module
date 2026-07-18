@@ -193,13 +193,17 @@ installmod)
     if command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
         mkdir -p /usr/share/nginx/modules /usr/lib64/nginx/modules/
         cp *.so /usr/lib64/nginx/modules/
-        echo 'load_module "/usr/lib64/nginx/modules/ngx_http_apache_rewrite_module.so";' \
-            > /usr/share/nginx/modules/ngx_http_apache_rewrite_module.conf
+        if [ ! -e "/usr/share/nginx/modules/ngx_http_apache_rewrite_module.conf" ]; then
+            echo 'load_module "/usr/lib64/nginx/modules/ngx_http_apache_rewrite_module.so";' \
+                > /usr/share/nginx/modules/ngx_http_apache_rewrite_module.conf
+        fi
     else
         mkdir -p /usr/share/nginx/modules/ /etc/nginx/modules
         cp *.so /usr/share/nginx/modules/
-        echo 'load_module "/usr/share/nginx/modules/ngx_http_apache_rewrite_module.so";' \
-            > /etc/nginx/modules/ngx_http_apache_rewrite_module.conf
+        if [ ! -e "/etc/nginx/modules/ngx_http_apache_rewrite_module.conf" ]; then
+            echo 'load_module "/usr/share/nginx/modules/ngx_http_apache_rewrite_module.so";' \
+                > /etc/nginx/modules/ngx_http_apache_rewrite_module.conf
+        fi
     fi
 ;;
 packageprep)
