@@ -1,5 +1,5 @@
-commit 1b37117a096fb4a7892715ce6775eb68b31b8922 (HEAD -> master, origin/master)
-Author: Alexey Berezhok <a@bayrepo.ru>
-Date:   Sat Jun 27 00:32:35 2026 +0300
+commit 252170f667bf1bb41b780879f6e438ce9eee4a6f (HEAD -> master, origin/master)
+Author: Alexey BayRepo <a@bayrepo.ru>
+Date:   Wed Jul 1 23:49:42 2026 +0300
 
-    Update documentation
+    Doc fixes
