@@ -1,0 +1,9 @@
+services:
+  apache-test:
+    build:
+      context: .
+      dockerfile: apache/Dockerfile
+    volumes:
+      - ../cms:/sites:ro
+    ports:
+      - "8081-8089:8081-8089"

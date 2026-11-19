@@ -19,6 +19,11 @@
 #include "ngx_http_apache_rewrite_engine.h"
 
 
+typedef struct {
+    ngx_flag_t  skip_rewrite_after_redirect;
+} ngx_rewrite_pool_ctx_t;
+
+
 /*
  * Check if a URI is absolute (has scheme://)
  */
@@ -331,10 +336,33 @@ ngx_rewrite_apply_rule(ngx_rewrite_rule_t *rule, ngx_rewrite_ctx_t *ctx, ngx_str
     ngx_str_t               newuri;
     ngx_http_request_t     *r = ctx->r;
 
+    /* Per-rule prefix stripping (matches Apache behavior):
+     * Each rule re-reads ctx->uri and strips htaccess directory prefix for matching.
+     * This ensures Chain [C] works correctly — after a rewrite updates
+     * ctx->uri, the next rule sees the updated URI with prefix stripped.
+     * When htaccess is set (even empty string from root-level .htaccess),
+     * strip the prefix + leading '/'. When htaccess is NULL (server/location
+     * rules without .htaccess), use URI as-is. */
+    if (ctx->htaccess.data
+        && ctx->uri.len > ctx->htaccess.len + 1
+        && ctx->uri.data[0] == '/')
+    {
+        if (ctx->htaccess.len == 0
+            || ngx_strncmp(ctx->uri.data + 1, ctx->htaccess.data, ctx->htaccess.len) == 0)
+        {
+            ctx->match_uri.data = ctx->uri.data + ctx->htaccess.len + 1;
+            ctx->match_uri.len = ctx->uri.len - ctx->htaccess.len - 1;
+        } else {
+            ctx->match_uri = ctx->uri;
+        }
+    } else {
+        ctx->match_uri = ctx->uri;
+    }
+
     /* Match the URI against the rule pattern */
-    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                   "mod_rewrite: applying pattern \"%V\" to uri \"%V\"",
-                   &rule->pattern, &ctx->uri);
+    ngx_log_debug3(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "mod_rewrite: applying pattern \"%V\" to uri \"%V\" (match_uri=\"%V\")",
+                   &rule->pattern, &ctx->uri, &ctx->match_uri);
 
     if (rule->regex == NULL) {
         return RULE_RC_NOMATCH;
@@ -750,32 +778,15 @@ ngx_rewrite_apply_list(ngx_http_request_t *r, ngx_array_t *rules,
 
     ctx->r = r;
     ctx->uri = r->uri;
-    ctx->match_uri = r->uri;
     ctx->uri_changed = 0;
 
     ctx->htaccess = ((htaccess) ? (*htaccess) : (ngx_str_t)ngx_null_string);
 
-    if (ctx->htaccess.data && ctx->match_uri.len > 1 && ctx->match_uri.data[0] == '/') {
-        ngx_str_t tmp_str = ngx_null_string;
-        // Allocate buffer for relative URI (strip htaccess directory prefix)
-        if (r->uri.len > (size_t)(ctx->htaccess.len + 1)) {
-            tmp_str.data = ngx_pnalloc(r->pool, r->uri.len - ctx->htaccess.len + 1);
-            if (tmp_str.data != NULL) {
-                // Strip the htaccess directory prefix to get relative URI for pattern matching
-                // Example: /wordpress/wp-json/ -> /wp-json/ when htaccess=/wordpress
-                ngx_memcpy(tmp_str.data, r->uri.data + ctx->htaccess.len + 1,
-                           r->uri.len - ctx->htaccess.len - 1);
-                tmp_str.len = r->uri.len - (ctx->htaccess.len + 1);
-                ctx->match_uri = tmp_str;
-            } else {
-                // Fallback: use original URI on allocation failure
-                ctx->match_uri = r->uri;
-            }
-        }
-    } else {
-        // Use original URI for matching when htaccess not applicable
-        ctx->match_uri = r->uri;
-    }
+    /* Initial match_uri setup — prefix stripping is now done per-rule
+     * inside apply_rule() to support Chain [C] correctly (matching Apache
+     * behavior where each rule re-reads and re-strips the current URI) */
+    ctx->match_uri = r->uri;
+
     ngx_str_null(&ctx->redirect_url);
     ctx->redirect_code = 0;
 

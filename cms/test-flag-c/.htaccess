@@ -1,0 +1,6 @@
+RewriteEngine On
+RewriteBase /test-flag-c/
+RewriteRule ^chain-start$ chain-mid [C]
+RewriteRule ^chain-mid$ chain-end.html [L]
+RewriteRule ^chain-fail$ nope [C]
+RewriteRule ^nope-wrong$ should-not-reach.html [L]

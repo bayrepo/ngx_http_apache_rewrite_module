@@ -267,11 +267,6 @@ typedef struct {
     ngx_int_t             uri_changed;
 } ngx_rewrite_ctx_t;
 
-/* modules/mod_rewrite/ngx_http_apache_rewrite_pool_ctx.h */
-typedef struct {
-    ngx_flag_t             skip_rewrite_after_redirect; /* флаг пропуска rewrite */
-} ngx_rewrite_pool_ctx_t;
-
 /*
  * htaccess pool cleanup context - stores cached entries when request ctx is cleared
  */

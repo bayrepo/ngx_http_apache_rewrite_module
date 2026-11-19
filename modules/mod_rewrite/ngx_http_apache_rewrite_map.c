@@ -108,21 +108,8 @@ ngx_str_t
 ngx_rewrite_map_unescape(ngx_pool_t *pool, ngx_str_t key)
 {
     ngx_str_t  result;
-    u_char    *dst;
+    u_char    *dst, *src;
 
-    result.data = ngx_pnalloc(pool, key.len + 1);
-    if (result.data == NULL) {
-        ngx_str_null(&result);
-        return result;
-    }
-
-    dst = result.data;
-    ngx_memcpy(dst, key.data, key.len);
-    dst[key.len] = '\0';
-
-    ngx_unescape_uri(&dst, &result.data, key.len, 0);
-    /* After unescape, dst points past written data, result.data is start */
-    /* Actually ngx_unescape_uri modifies both pointers. Re-do properly: */
     result.data = ngx_pnalloc(pool, key.len + 1);
     if (result.data == NULL) {
         ngx_str_null(&result);
@@ -133,10 +120,8 @@ ngx_rewrite_map_unescape(ngx_pool_t *pool, ngx_str_t key)
     result.data[key.len] = '\0';
 
     dst = result.data;
-    {
-        u_char *src = result.data;
-        ngx_unescape_uri(&dst, &src, key.len, 0);
-    }
+    src = result.data;
+    ngx_unescape_uri(&dst, &src, key.len, 0);
     result.len = dst - result.data;
 
     return result;

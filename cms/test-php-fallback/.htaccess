@@ -1,0 +1,6 @@
+RewriteEngine On
+RewriteBase /test-php-fallback/
+RewriteFallBack /fallback.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . fallback.php [L]

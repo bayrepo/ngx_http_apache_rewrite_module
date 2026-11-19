@@ -28,16 +28,24 @@ ngx_rewrite_lookup_header(ngx_http_request_t *r, ngx_str_t *name)
     ngx_list_part_t  *part;
     ngx_table_elt_t  *h;
     ngx_uint_t        i;
-    u_char            lowered[256];
+    u_char            stack_buf[256];
+    u_char           *lowered;
     ngx_uint_t        len;
     ngx_str_t         empty = ngx_null_string;
 
-    /* Convert header name: underscores to dashes, lowercase */
     len = name->len;
-    if (len > sizeof(lowered) - 1) {
-        len = sizeof(lowered) - 1;
+
+    /* Fast path: use stack buffer for typical header names */
+    if (len <= sizeof(stack_buf)) {
+        lowered = stack_buf;
+    } else {
+        lowered = ngx_pnalloc(r->pool, len);
+        if (lowered == NULL) {
+            return empty;
+        }
     }
 
+    /* Convert header name: underscores to dashes, lowercase */
     for (i = 0; i < len; i++) {
         u_char ch = name->data[i];
         if (ch == '_') {
@@ -165,7 +173,7 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
         if (ngx_strncasecmp(var->data, (u_char *) "TIME", 4) == 0) {
             now = ngx_time();
             ngx_localtime(now, &tm);
-            p = ngx_pnalloc(pool, 15);
+            p = ngx_pcalloc(pool, 15);
             if (p) {
                 result.len = ngx_sprintf(p, "%04d%02d%02d%02d%02d%02d",
                     tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
@@ -195,7 +203,7 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
         if (ngx_strncasecmp(var->data, (u_char *) "TIME_DAY", 8) == 0) {
             now = ngx_time();
             ngx_localtime(now, &tm);
-            p = ngx_pnalloc(pool, 3);
+            p = ngx_pcalloc(pool, 3);
             if (p) {
                 result.len = ngx_sprintf(p, "%02d", tm.tm_mday) - p;
                 result.data = p;
@@ -205,7 +213,7 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
         if (ngx_strncasecmp(var->data, (u_char *) "TIME_SEC", 8) == 0) {
             now = ngx_time();
             ngx_localtime(now, &tm);
-            p = ngx_pnalloc(pool, 3);
+            p = ngx_pcalloc(pool, 3);
             if (p) {
                 result.len = ngx_sprintf(p, "%02d", tm.tm_sec) - p;
                 result.data = p;
@@ -215,7 +223,7 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
         if (ngx_strncasecmp(var->data, (u_char *) "TIME_MIN", 8) == 0) {
             now = ngx_time();
             ngx_localtime(now, &tm);
-            p = ngx_pnalloc(pool, 3);
+            p = ngx_pcalloc(pool, 3);
             if (p) {
                 result.len = ngx_sprintf(p, "%02d", tm.tm_min) - p;
                 result.data = p;
@@ -225,7 +233,7 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
         if (ngx_strncasecmp(var->data, (u_char *) "TIME_MON", 8) == 0) {
             now = ngx_time();
             ngx_localtime(now, &tm);
-            p = ngx_pnalloc(pool, 3);
+            p = ngx_pcalloc(pool, 3);
             if (p) {
                 result.len = ngx_sprintf(p, "%02d", tm.tm_mon + 1) - p;
                 result.data = p;
@@ -250,13 +258,19 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
             return result;
         }
         if (ngx_strncasecmp(var->data, (u_char *) "PATH_INFO", 9) == 0) {
-            /* In nginx rewrite phase there's no path_info yet */
+            /* PATH_INFO = portion of URI after SCRIPT_NAME
+             * Compute as: r->uri minus the matched location prefix */
+            clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
+            if (clcf && r->uri.len > clcf->name.len) {
+                result.data = r->uri.data + clcf->name.len;
+                result.len = r->uri.len - clcf->name.len;
+            }
             return result;
         }
         if (ngx_strncasecmp(var->data, (u_char *) "TIME_HOUR", 9) == 0) {
             now = ngx_time();
             ngx_localtime(now, &tm);
-            p = ngx_pnalloc(pool, 3);
+            p = ngx_pcalloc(pool, 3);
             if (p) {
                 result.len = ngx_sprintf(p, "%02d", tm.tm_hour) - p;
                 result.data = p;
@@ -266,7 +280,7 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
         if (ngx_strncasecmp(var->data, (u_char *) "TIME_WDAY", 9) == 0) {
             now = ngx_time();
             ngx_localtime(now, &tm);
-            p = ngx_pnalloc(pool, 2);
+            p = ngx_pcalloc(pool, 2);
             if (p) {
                 result.len = ngx_sprintf(p, "%d", tm.tm_wday) - p;
                 result.data = p;
@@ -276,11 +290,15 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
         if (ngx_strncasecmp(var->data, (u_char *) "TIME_YEAR", 9) == 0) {
             now = ngx_time();
             ngx_localtime(now, &tm);
-            p = ngx_pnalloc(pool, 5);
+            p = ngx_pcalloc(pool, 5);
             if (p) {
-                result.len = ngx_sprintf(p, "%04d",
-                    tm.tm_year + 1900) - p;
+                ngx_int_t year = tm.tm_year + 1900;
+                p[0] = '0' + (year / 1000) % 10;
+                p[1] = '0' + (year / 100) % 10;
+                p[2] = '0' + (year / 10) % 10;
+                p[3] = '0' + year % 10;
                 result.data = p;
+                result.len = 4;
             }
             return result;
         }
@@ -288,7 +306,7 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
 
     case 10:
         if (ngx_strncasecmp(var->data, (u_char *) "SERVER_URL", 10) == 0) {
-            /* Not commonly used, return empty */
+            /* Apache-specific, no nginx equivalent — return empty */
             return result;
         }
         break;
@@ -343,7 +361,7 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
 
             sa = r->connection->local_sockaddr;
             port = ngx_inet_get_port(sa);
-            p = ngx_pnalloc(pool, 6);
+            p = ngx_pcalloc(pool, 6);
             if (p) {
                 result.len = ngx_sprintf(p, "%ui", port) - p;
                 result.data = p;
@@ -356,7 +374,7 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
 
             sa = r->connection->sockaddr;
             port = ngx_inet_get_port(sa);
-            p = ngx_pnalloc(pool, 6);
+            p = ngx_pcalloc(pool, 6);
             if (p) {
                 result.len = ngx_sprintf(p, "%ui", port) - p;
                 result.data = p;
@@ -386,7 +404,7 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
             return result;
         }
         if (ngx_strncasecmp(var->data, (u_char *) "REMOTE_IDENT", 12) == 0) {
-            /* Not available in nginx */
+            /* Ident protocol — obsolete, no nginx equivalent — return empty */
             return result;
         }
         break;
@@ -421,6 +439,14 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
 #else
             ngx_str_set(&result, "http");
 #endif
+            return result;
+        }
+        if (ngx_strncasecmp(var->data, (u_char *) "CONTEXT_PREFIX", 14) == 0) {
+            /* Location prefix that matched this request */
+            clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
+            if (clcf) {
+                result = clcf->name;
+            }
             return result;
         }
         break;
@@ -555,8 +581,34 @@ ngx_rewrite_lookup_variable(ngx_str_t *var, ngx_rewrite_ctx_t *ctx)
             hdr_name.len = 16;
             return ngx_rewrite_lookup_header(r, &hdr_name);
         }
+        if (ngx_strncasecmp(var->data,
+            (u_char *) "CONTEXT_DOCUMENT_ROOT", 21) == 0)
+        {
+            /* DOCUMENT_ROOT + CONTEXT_PREFIX */
+            clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
+            if (clcf && clcf->root.len > 0) {
+                size_t total = clcf->root.len + clcf->name.len;
+                p = ngx_pnalloc(pool, total);
+                if (p) {
+                    u_char *start = p;
+                    p = ngx_cpymem(p, clcf->root.data, clcf->root.len);
+                    if (clcf->name.len > 0 && clcf->name.data[0] != '/') {
+                        *p++ = '/';
+                    }
+                    p = ngx_cpymem(p, clcf->name.data, clcf->name.len);
+                    result.data = start;
+                    result.len = p - start;
+                }
+            }
+            return result;
+        }
         break;
     }
+
+    /* Unsupported Apache variables — return empty string:
+     *   API_VERSION      — Apache internal API version, no nginx equivalent
+     *   SERVER_ADMIN     — Apache ServerAdmin directive, no nginx equivalent
+     */
 
     return result;
 }

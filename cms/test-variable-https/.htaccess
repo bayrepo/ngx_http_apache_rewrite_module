@@ -1,0 +1,4 @@
+RewriteEngine On
+RewriteBase /test-variable-https/
+RewriteCond %{HTTPS} off
+RewriteRule ^https-check$ https-off.html [L]

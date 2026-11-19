@@ -1,0 +1,9 @@
+RewriteEngine On
+RewriteBase /test-flag-r/
+RewriteRule ^r301$ target.html [R=301,L]
+RewriteRule ^r302$ target.html [R=302,L]
+RewriteRule ^r307$ target.html [R=307,L]
+RewriteRule ^rdefault$ target.html [R,L]
+RewriteRule ^rpermanent$ target.html [R=permanent,L]
+RewriteRule ^rtemp$ target.html [R=temp,L]
+RewriteRule ^rseeother$ target.html [R=seeother,L]

@@ -15,54 +15,6 @@ The following directives are available in this module:
 | Context        | Available Levels                            |
 |----------------|---------------------------------------------|
 | `main`, `server`, `location` | ✓ All three levels supported |
-| `GlobalLocation` | ✓ Global location level (new) |
-
-**Syntax:**
-```nginx
-RewriteEngine on|off
-```
-
-**Possible Values:**
-- `on`  - Enable rewrite engine
-- `off` - Disable rewrite engine (default)
-
-**Example in nginx.conf:**
-```nginx
-http {
-    server {
-        RewriteEngine on;
-
-        location /blog/ {
-            # Rules apply here
-        }
-
-        location /static/ {
-            RewriteEngine off;  # Disable for this location
-        }
-    }
-}
-```
-
-**GlobalLocation Configuration (new):**
-The `GlobalLocationRewriteEngine` directive allows setting the rewrite engine state for server-level locations:
-
-```nginx
-http {
-    server {
-        GlobalLocationRewriteEngine on;
-
-        # All locations in this server inherit the global setting
-
-        location /blog/ {
-            # RewriteEngine is enabled by default
-        }
-
-        location /static/ {
-            RewriteEngine off;  # Override for this location if needed
-        }
-    }
-}
-```
 
 **Syntax:**
 ```nginx
@@ -127,15 +79,17 @@ RewriteRule pattern substitution [flags]
 | `G`  | Gone         | Return HTTP 410 Gone status |
 | `L`  | Last         | Stop processing rules after this one |
 | `N`  | Next=limit   | Loop (retry) up to N times for infinite rewriting prevention |
+| `NC` | NoCase       | Case-insensitive matching |
+| `NE` | NoEscape     | Do not escape special characters in output |
+| `NS` | NoSubreq     | Skip this rule for internal subrequests |
 | `P`  | Proxy        | Proxy the request internally (Phase 2) |
-| `Q`  | QSA          | Append original query string to substitution URL |
-| `Q`  | QSD          | Discard original query string |
-| `Q`  | QSL          | Set "query string last" marker |
+| `PT` | PassThrough  | Pass the rewritten URI to the next handler (e.g., location matching) |
+| `QSA`| QSAppend     | Append original query string to substitution URL |
+| `QSD`| QSDiscard    | Discard original query string |
+| `QSL`| QSLast       | Set "query string last" marker |
 | `R`  | Redirect=code| Perform external redirect with status code (301, 302, 307) or: Permanent, Temp, SeeOther |
 | `S`  | Skip=N       | Skip N subsequent rules after this one |
 | `T`  | Type=mime    | Force specific MIME type for the response |
-| `NC` | -            | Case-insensitive matching |
-| `NOESCAPE` | -      | Do not escape special characters in output |
 | `END`| -            | Stop all rewriting and pass to content phase |
 
 **Example:**
@@ -249,6 +203,7 @@ RewriteRule ^index\.html$ home.php [L]
 | Context        | Available Levels                            |
 |----------------|---------------------------------------------|
 | `main`, `server`, `location` | ✓ All three levels supported |
+| `.htaccess`    | ✓ Supported in .htaccess files              |
 
 **Syntax:**
 ```nginx
@@ -395,15 +350,46 @@ server {
         root /var/www/html;
     }
 }
-
-# In .htaccess:
-HtaccessEnable on
-HtaccessName .custom_htac
 ```
 
 ---
 
-### 9. RewriteFallBack
+### 9. FallbackToIndex
+
+**Purpose:** Enable or disable the automatic fallback mechanism that redirects requests to a fallback path (default `/index.php`) when the rewritten file does not exist on disk. This controls the server-level fallback behavior independently of `.htaccess`.
+
+| Context        | Available Levels                            |
+|----------------|---------------------------------------------|
+| `main`, `server` | ✓ Main and Server level only             |
+| `.htaccess`    | ✗ Not supported in .htaccess                |
+
+**Syntax:**
+```nginx
+FallbackToIndex on|off
+```
+
+**Parameters:**
+- `on`  - Enable fallback to index (default)
+- `off` - Disable fallback mechanism
+
+**Example:**
+```nginx
+http {
+    server {
+        FallbackToIndex on;
+
+        location / {
+            root /var/www/html;
+        }
+    }
+}
+```
+
+> **Note:** When enabled, any request whose rewritten URI does not correspond to an existing file will be internally redirected to the fallback path (`/index.php` by default, or the path specified by `RewriteFallBack` in `.htaccess`). Disable this if you want standard nginx 404 behavior for missing files.
+
+---
+
+### 10. RewriteFallBack
 
 **Purpose:** Specify an alternative fallback path when the rewritten file doesn't exist (instead of default `/index.php`). This directive can only be used in `.htaccess` files and is read by `ngx_htaccess_parse_file_from_ha()`. The fallback path is cached per request and retrieved in `ngx_http_apache_rewrite_url_register_hook_with_fallback()`.
 
@@ -443,18 +429,19 @@ RewriteFallBack /handler.php?lang=ru
 
 ## Configuration Levels Summary
 
-| Directive                | http/main | server | location | .htaccess |
-|--------------------------|-----------|--------|----------|-----------|
-| RewriteEngine            | ✓         | ✓      | ✓        | ✓         |
-| GlobalLocationRewriteEngine | -     | ✓      | -        | -         |
-| RewriteRule              | -         | ✓      | ✓        | ✓         |
-| RewriteCond              | -         | ✓      | ✓        | ✓         |
-| RewriteBase              | -         | -      | ✓        | ✓         |
-| RewriteOptions           | ✓         | ✓      | ✓        | -         |
-| RewriteMap               | -         | ✓      | -        | -         |
-| HtaccessEnable           | ✓         | ✓      | -        | -         |
-| HtaccessName             | ✓         | ✓      | -        | -         |
-| RewriteFallBack          | ✗         | ✗      | -        | ✓         |
+| Directive                     | http/main | server | location | .htaccess |
+|-------------------------------|-----------|--------|----------|-----------|
+| RewriteEngine                 | ✓         | ✓      | ✓        | ✓         |
+| GlobalLocationRewriteEngine   | -         | ✓      | -        | -         |
+| RewriteRule                   | -         | ✓      | ✓        | ✓         |
+| RewriteCond                   | -         | ✓      | ✓        | ✓         |
+| RewriteBase                   | -         | -      | ✓        | ✓         |
+| RewriteOptions                | ✓         | ✓      | ✓        | ✓         |
+| RewriteMap                    | -         | ✓      | -        | -         |
+| HtaccessEnable                | ✓         | ✓      | -        | -         |
+| HtaccessName                  | ✓         | ✓      | -        | -         |
+| FallbackToIndex               | ✓         | ✓      | -        | -         |
+| RewriteFallBack               | -         | -      | -        | ✓         |
 
 ---
 
@@ -476,8 +463,8 @@ RewriteRule (.*) https://www.example.com/$1 [R=301,L]
 
 RewriteBase /subdir/
 RewriteFallBack /custom/fallback.php
-RewriteCond !-f
-RewriteCond !-d
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ index.php?route=$1 [QSA,L]
 ```
 
@@ -498,21 +485,19 @@ Environment variables persist across request phases and are available for downst
 ### .htaccess Caching
 `.htaccess` files are cached by modification time in the request pool to improve performance on repeated requests. The `RewriteFallBack` directive is also stored in the cache entry and retrieved when needed.
 
-### RewriteFallBack Directive
-The `RewriteFallBack` directive allows customizing the fallback path used when a rewritten file doesn't exist:
+### Fallback Mechanism
+When the rewritten file does not exist on disk, the module can redirect the request to a fallback path:
 
-1. **Caching:** The fallback path from `.htaccess` is cached per request to avoid repeated parsing
-2. **Fallback Logic:** When `try_files` fails, the module redirects to the configured fallback instead of `/index.php`
-3. **Query String Preservation:** Original query string is preserved and appended to fallback path
+1. **Server-level control:** The `FallbackToIndex` directive (enabled by default) controls whether the fallback mechanism is active
+2. **Custom fallback path:** The `RewriteFallBack` directive in `.htaccess` overrides the default `/index.php` fallback
+3. **Query String Preservation:** The original query string is preserved and appended to the fallback path
 
----
-
-### GlobalLocationRewriteEngine Directive (new)
-The `GlobalLocationRewriteEngine` directive allows setting the rewrite engine state for server-level locations:
+### GlobalLocationRewriteEngine
+The `GlobalLocationRewriteEngine` directive allows setting the rewrite engine state for all locations within a server block:
 
 1. **Scope:** Configured only at the server block level within http context
-2. **Inheritance:** All new locations inherit the global configuration by default
-3. **Override Support:** Individual locations can still override the global setting with their own `RewriteEngine` directive
+2. **Inheritance:** All locations inherit the global configuration by default
+3. **Override Support:** Individual locations can override the global setting with their own `RewriteEngine` directive
 
 ---
 
@@ -522,3 +507,5 @@ The `GlobalLocationRewriteEngine` directive allows setting the rewrite engine st
 - The `[L]` flag stops processing at the current rule
 - The `[N]` flag enables looping for infinite redirects prevention (max 10,000 rounds)
 - Location-level rules override server-level rules unless `Inherit` option is set
+- The `[NS]` flag skips the rule for internal subrequests
+- The `[PT]` flag passes the rewritten URI to the next handler for further processing

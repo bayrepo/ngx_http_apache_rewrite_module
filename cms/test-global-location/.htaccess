@@ -1,0 +1,3 @@
+RewriteEngine On
+RewriteBase /test-global-location/
+RewriteRule ^global-test$ global-ok.html [L]

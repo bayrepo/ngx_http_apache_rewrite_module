@@ -230,7 +230,7 @@ ngx_http_apache_rewrite_create_srv_conf(ngx_conf_t *cf)
     conf->htaccess_enable = 0;
     conf->htaccess_enable_set = 0;
 
-    conf->fallback_to_index = 1;
+    conf->fallback_to_index = 0;
 
     return conf;
 }
@@ -697,7 +697,9 @@ ngx_htaccess_update_cache(ngx_http_request_t *r, ngx_str_t file_path, time_t mti
         /* Search existing entry by path in ctx */
         htaccess_entry_t *entry = ctx->htaccess_cache_head;
         while (entry != NULL) {
-            if (ngx_strncmp((const char *)entry->file_path, (const char *)file_path.data, file_path.len) == 0) {
+            if (ngx_strlen(entry->file_path) == file_path.len
+                && ngx_strncmp((const char *)entry->file_path, (const char *)file_path.data, file_path.len) == 0)
+            {
                 /* Found matching entry in ctx - update mtime and rules if newer */
                 if (mtime >= entry->mtime) {
                     entry->mtime = mtime;
@@ -730,7 +732,9 @@ ngx_htaccess_update_cache(ngx_http_request_t *r, ngx_str_t file_path, time_t mti
             if (ctx && ctx->htaccess_cache_head) {
                 entry = ctx->htaccess_cache_head;
                 while (entry != NULL) {
-                    if (ngx_strncmp((const char *)entry->file_path, (const char *)file_path.data, file_path.len) == 0) {
+                    if (ngx_strlen(entry->file_path) == file_path.len
+                        && ngx_strncmp((const char *)entry->file_path, (const char *)file_path.data, file_path.len) == 0)
+                    {
                         /* Found matching entry - update mtime and rules */
                         if (mtime >= entry->mtime) {
                             entry->mtime = mtime;
@@ -787,9 +791,6 @@ ngx_htaccess_search_upward(ngx_http_request_t *r, u_char *docroot, size_t docroo
     u_char *path_buf = (u_char *)ngx_palloc(r->pool, current_path->len + 1 + htaccess_name_len);
     size_t  current_pos;
 
-    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-               "mod_rewrite: try to find .htaccess %s, uri=\"%V\"", path_buf, &r->uri);
-
     if (!path_buf) {
         return NGX_ERROR;
     }
@@ -802,15 +803,16 @@ ngx_htaccess_search_upward(ngx_http_request_t *r, u_char *docroot, size_t docroo
     current_pos = current_path->len - 1;
     path_buf[current_path->len + htaccess_name_len] = '\0';
 
-
+    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+               "mod_rewrite: try to find .htaccess %s, uri=\"%V\"", path_buf, &r->uri);
 
     /* Iterate upward from current directory up to docroot */
     while (1) {
         /* Check if file exists at this level */
         ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "mod_rewrite: try to find(1) .htaccess %s, uri=\"%V\"", path_buf, &r->uri);
-        struct stat st;
-        if (stat((char *)path_buf, &st) == 0 && ngx_is_file(&st)) {
+        ngx_file_info_t fi;
+        if (ngx_file_info(path_buf, &fi) == NGX_OK && ngx_is_file(&fi)) {
             /* Found .htaccess! */
             found_path->data = path_buf;
             found_path->len = current_pos + 1 + htaccess_name_len;
@@ -954,10 +956,10 @@ ngx_htaccess_parse_line(ngx_pool_t *pool, const char *line)
         return NULL;
     }
 
-    /* Split on whitespace, collapsing multiple spaces */
+    /* Split on whitespace with proper quote and backslash handling */
     u_char *p = start;
     while (p < end) {
-        /* Skip any leading spaces between words */
+        /* Skip whitespace between words */
         while (p < end && isspace(*p)) {
             p++;
         }
@@ -965,30 +967,46 @@ ngx_htaccess_parse_line(ngx_pool_t *pool, const char *line)
             break;
         }
 
-        u_char *w_start = p;
-        while (p < end && !isspace(*p)) {
-            p++;
+        /* Allocate output buffer (worst case = remaining input length) */
+        size_t max_len = end - p;
+        b_word = ngx_palloc(pool, max_len + 1);
+        if (!b_word) {
+            return NULL;
         }
-        size_t w_len = p - w_start;
 
-        /* Handle double-quoted strings: strip surrounding quotes */
-        if (w_len >= 2 && w_start[0] == '"' && w_start[w_len - 1] == '"') {
-            w_start += 1;
-            w_len -= 2;
+        u_char *dst = b_word;
+        int in_quotes = 0;
+
+        while (p < end) {
+            if (*p == '\\' && p + 1 < end && (*(p+1) == '"' || *(p+1) == ' ' || *(p+1) == '\t' || *(p+1) == '\\')) {
+                /* Only escape quotes, spaces, and backslash itself.
+                 * Other backslashes (e.g., \( \) in regex) are preserved
+                 * so that regex engine can interpret them correctly. */
+                p++;
+                *dst++ = *p++;
+            } else if (*p == '"') {
+                /* Toggle quote mode */
+                in_quotes = !in_quotes;
+                p++;
+            } else if (!in_quotes && isspace(*p)) {
+                /* Unquoted whitespace ends the word */
+                break;
+            } else {
+                *dst++ = *p++;
+            }
         }
+
+        size_t w_len = dst - b_word;
+        if (w_len == 0) {
+            continue;
+        }
+
+        b_word[w_len] = '\0';
 
         ngx_str_t *word = ngx_array_push(words);
         if (word == NULL) {
             return NULL;
         }
-
-        b_word   = ngx_palloc(pool, w_len + 1);
-        if (!b_word) {
-            return NULL;
-        }
-
-        ngx_memzero(b_word, w_len + 1);
-        ngx_memcpy(b_word, w_start, w_len);
 
         word->data = b_word;
         word->len  = w_len;
@@ -1209,28 +1227,44 @@ void * ngx_http_rewrite_cond_helper(int parsing, ngx_http_apache_rewrite_srv_con
                     break;
                 }
             }
-            /* Integer comparison: -lt, -le, -eq, -gt, -ge, -ne */
-            else if (pat_len >= 3 && pat[1] != '-') {
+            /* Integer comparison: -lt, -le, -eq, -gt, -ge, -ne
+             * Apache syntax: RewriteCond TestString -gt8000
+             * The operator and value are ONE argument: "-gt8000"
+             * After detecting the operator prefix (-gt, -lt, etc.),
+             * the remaining characters become the compare value.
+             * This matches Apache mod_rewrite behavior exactly. */
+            else if (pat_len > 3 && pat[1] != '-') {
+                ngx_int_t int_type = -1;
+                ngx_int_t is_ne = 0;
+
                 if (pat[1] == 'l' && pat[2] == 't') {
-                    cond->ptype = CONDPAT_INT_LT;
-                    pat += 3; pat_len -= 3;
+                    int_type = CONDPAT_INT_LT;
                 } else if (pat[1] == 'l' && pat[2] == 'e') {
-                    cond->ptype = CONDPAT_INT_LE;
-                    pat += 3; pat_len -= 3;
+                    int_type = CONDPAT_INT_LE;
                 } else if (pat[1] == 'e' && pat[2] == 'q') {
-                    cond->ptype = CONDPAT_INT_EQ;
-                    pat += 3; pat_len -= 3;
+                    int_type = CONDPAT_INT_EQ;
                 } else if (pat[1] == 'g' && pat[2] == 't') {
-                    cond->ptype = CONDPAT_INT_GT;
-                    pat += 3; pat_len -= 3;
+                    int_type = CONDPAT_INT_GT;
                 } else if (pat[1] == 'g' && pat[2] == 'e') {
-                    cond->ptype = CONDPAT_INT_GE;
-                    pat += 3; pat_len -= 3;
+                    int_type = CONDPAT_INT_GE;
                 } else if (pat[1] == 'n' && pat[2] == 'e') {
-                    /* -ne is !-eq */
-                    cond->ptype = CONDPAT_INT_EQ;
-                    cond->flags ^= CONDFLAG_NOTMATCH;
+                    int_type = CONDPAT_INT_EQ;
+                    is_ne = 1;
+                }
+
+                if (int_type >= 0) {
+                    cond->ptype = int_type;
+                    if (is_ne) {
+                        cond->flags ^= CONDFLAG_NOTMATCH;
+                    }
+
+                    /* Value follows immediately after operator: -gt8000 → "8000" */
                     pat += 3; pat_len -= 3;
+                    cond->pattern.data = pat;
+                    cond->pattern.len = pat_len;
+
+                    /* Skip normal pattern assignment below */
+                    goto cond_done;
                 }
             }
         }
@@ -1262,9 +1296,15 @@ void * ngx_http_rewrite_cond_helper(int parsing, ngx_http_apache_rewrite_srv_con
             }
         }
 
-        /* Store the (possibly adjusted) pattern */
-        cond->pattern.data = pat;
-        cond->pattern.len = pat_len;
+cond_done:
+        /* Store the (possibly adjusted) pattern (skip if integer cond already set it) */
+        if (cond->ptype != CONDPAT_INT_LT && cond->ptype != CONDPAT_INT_LE
+            && cond->ptype != CONDPAT_INT_EQ && cond->ptype != CONDPAT_INT_GT
+            && cond->ptype != CONDPAT_INT_GE)
+        {
+            cond->pattern.data = pat;
+            cond->pattern.len = pat_len;
+        }
 
         /* Compile regex if needed */
         if (cond->ptype == CONDPAT_REGEX) {
@@ -1305,10 +1345,12 @@ void * ngx_http_rewrite_cond_helper(int parsing, ngx_http_apache_rewrite_srv_con
 static ngx_http_apache_rewrite_loc_conf_t *
 ngx_htaccess_parse_file_from_ha(ngx_http_request_t *r, ngx_str_t *file_path)
 {
-    FILE   *fp;
-    char  line_buf_raw[4096];
-    char  line_buf[4096];
-    size_t  line_len;
+    ngx_file_t  file;
+    ngx_file_info_t fi;
+    u_char     *buf, *pos, *last, *line_start, *line_end;
+    ssize_t     n;
+    char        line_buf[4096];
+    size_t      line_len;
 
     ngx_http_apache_rewrite_loc_conf_t *conf;
     ngx_pool_t *pool = r->pool;
@@ -1332,38 +1374,85 @@ ngx_htaccess_parse_file_from_ha(ngx_http_request_t *r, ngx_str_t *file_path)
     ngx_str_null(&conf->baseurl);
     ngx_str_null(&conf->fallback_path);
 
-    fp = fopen((const char *)file_path->data, "r");
-    if (fp == NULL) {
+    /* Open file using nginx API */
+    ngx_memzero(&file, sizeof(ngx_file_t));
+    file.name = *file_path;
+    file.log = r->connection->log;
+
+    file.fd = ngx_open_file(file_path->data, NGX_FILE_RDONLY, NGX_FILE_OPEN, 0);
+    if (file.fd == NGX_INVALID_FILE) {
         return NULL;
     }
-    /* Initialize state to enabled */
-    while (fgets(line_buf_raw, sizeof(line_buf_raw), fp) != NULL) {
-        line_len = strlen(line_buf_raw);
 
-        char *p_line_buf_raw = line_buf_raw;
-        /* Skip leading spaces and tabs */
-        while (*p_line_buf_raw && (*p_line_buf_raw == ' ' || *p_line_buf_raw == '\t')) {
-            p_line_buf_raw++;
+    if (ngx_fd_info(file.fd, &fi) == NGX_FILE_ERROR) {
+        ngx_close_file(file.fd);
+        return NULL;
+    }
+
+    size_t file_size = ngx_file_size(&fi);
+    if (file_size == 0) {
+        ngx_close_file(file.fd);
+        return conf;
+    }
+
+    buf = ngx_pnalloc(pool, file_size + 1);
+    if (buf == NULL) {
+        ngx_close_file(file.fd);
+        return NULL;
+    }
+
+    n = ngx_read_file(&file, buf, file_size, 0);
+    ngx_close_file(file.fd);
+
+    if (n == NGX_ERROR || (size_t)n != file_size) {
+        return NULL;
+    }
+
+    buf[file_size] = '\n';
+    last = buf + file_size + 1;
+
+    /* Parse line by line */
+    pos = buf;
+    while (pos < last) {
+        line_start = pos;
+
+        /* Find end of line */
+        while (pos < last && *pos != '\n' && *pos != '\r') {
+            pos++;
         }
-        /* Skip trailing spaces and tabs */
-        char *q_line_buf_raw = p_line_buf_raw + strlen(p_line_buf_raw) - 1;
-        while (q_line_buf_raw >= p_line_buf_raw && (*q_line_buf_raw == ' ' || *q_line_buf_raw == '\t' || *q_line_buf_raw == '\n')) {
-            *q_line_buf_raw = '\0';
-            q_line_buf_raw--;
+        line_end = pos;
+
+        /* Skip line ending */
+        if (pos < last && *pos == '\r') {
+            pos++;
         }
-        size_t trimmed_len = strlen(p_line_buf_raw);
-        ngx_memcpy(line_buf, p_line_buf_raw, trimmed_len + 1); /* include null terminator */
-        line_len = trimmed_len;
+        if (pos < last && *pos == '\n') {
+            pos++;
+        }
+
+        /* Trim leading whitespace */
+        while (line_start < line_end && (*line_start == ' ' || *line_start == '\t')) {
+            line_start++;
+        }
+
+        /* Trim trailing whitespace */
+        while (line_end > line_start && (line_end[-1] == ' ' || line_end[-1] == '\t')) {
+            line_end--;
+        }
+
+        line_len = line_end - line_start;
 
         /* Skip empty lines and comments */
-        if (line_len == 0 || line_buf[0] == '#' || line_buf[0] == '\n') {
+        if (line_len == 0 || *line_start == '#') {
             continue;
         }
-        /* Trim trailing newline */
-        if (line_len > 0 && line_buf[line_len - 1] == '\n') {
-            line_buf[line_len - 1] = '\0';
-            line_len--;
+
+        /* Copy to null-terminated buffer for parse_line */
+        if (line_len >= sizeof(line_buf)) {
+            line_len = sizeof(line_buf) - 1;
         }
+        ngx_memcpy(line_buf, line_start, line_len);
+        line_buf[line_len] = '\0';
         /* -----------------------------------------------------------------
          *  RewriteEngine
          * ----------------------------------------------------------------- */
@@ -1387,7 +1476,6 @@ ngx_htaccess_parse_file_from_ha(ngx_http_request_t *r, ngx_str_t *file_path)
                     conf, NULL, args, r);
 
                 if (result == NGX_CONF_ERROR) {
-                    fclose(fp);
                     return NULL;
                 }
 
@@ -1427,7 +1515,6 @@ ngx_htaccess_parse_file_from_ha(ngx_http_request_t *r, ngx_str_t *file_path)
                     conf, NULL, args, r);
 
                 if (result == NGX_CONF_ERROR) {
-                    fclose(fp);
                     return NULL;
                 }
 
@@ -1483,7 +1570,7 @@ ngx_htaccess_parse_file_from_ha(ngx_http_request_t *r, ngx_str_t *file_path)
 
         }
     }
-    fclose(fp);
+
     return conf;
 }
 
@@ -1519,7 +1606,11 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
     }
 
     if (lcf == NULL || lcf->state != ENGINE_ENABLED) {
-        if (global_enabled == 1) {
+        /* Check if engine is enabled at server level or via GlobalLocation.
+         * This ensures .htaccess processing works in all locations when
+         * RewriteEngine is enabled at server level, matching Apache behavior
+         * where server-level RewriteEngine affects all directories. */
+        if (global_enabled == 1 || (sconf && sconf->state == ENGINE_ENABLED)) {
             if (lcf == NULL) {
                 lcf = ngx_http_apache_rewrite_create_loc_conf_(r->pool);
             }
@@ -1576,6 +1667,7 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
     ngx_str_t current_path;
     ngx_str_t evaluated_root = {0, NULL};
     size_t evaluated_root_len = 0;
+    (void)evaluated_root_len;
 
     /* Check if root contains variables and evaluate them */
     if (clcf->root_lengths != NULL) {
@@ -1658,11 +1750,11 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
     }
 
     /* Check if htaccess file exists */
-    struct stat st;
-    if (!htaccess_path.data || stat((char *)htaccess_path.data, &st) == -1) {
+    ngx_file_info_t fi;
+    if (!htaccess_path.data || ngx_file_info(htaccess_path.data, &fi) != NGX_OK) {
         /* File does not exist — use only location rules */
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                       "mod_rewrite: location handler .htaccess nto found by stat, uri=\"%V\"", &r->uri);
+                       "mod_rewrite: location handler .htaccess not found, uri=\"%V\"", &r->uri);
         if (lcf->rules->nelts == 0) {
             return NGX_DECLINED;
         }
@@ -1714,8 +1806,10 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
     if (ctx && ctx->htaccess_cache_head) {
         htaccess_entry_t *entry = ctx->htaccess_cache_head;
         while (entry != NULL) {
-            if (ngx_strncmp((const char *)entry->file_path, (const char *)htaccess_path.data, htaccess_path.len) == 0 &&
-                entry->mtime <= st.st_mtime) {
+            if (ngx_strlen(entry->file_path) == htaccess_path.len
+                && ngx_strncmp((const char *)entry->file_path, (const char *)htaccess_path.data, htaccess_path.len) == 0
+                && entry->mtime <= fi.st_mtime)
+            {
                 /* Found matching cached entry — use it */
                 combined_rules = entry->rules;
                 fallback_from_cache = entry->fallback_path;
@@ -1754,7 +1848,7 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
             baseurl_htacess = parsed_rules->baseurl;
 
         /* Store in cache — add/update entry in linked list */
-        ngx_htaccess_update_cache(r, htaccess_path, st.st_mtime, parsed_rules);
+        ngx_htaccess_update_cache(r, htaccess_path, fi.st_mtime, parsed_rules);
 
     } else {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
@@ -1785,12 +1879,20 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
         }
     }
 
-    /* Combine location rules with .htaccess rules (.htaccess has priority - added first) */
+    /* Combine location rules with .htaccess rules */
     ngx_int_t final_rc;
-    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                   "mod_rewrite: location handler rules from .htaccess found %d, .htaccess=\"%V\"", combined_rules->nelts, &htaccess_path);
+    ngx_int_t inherit_before = 0;
+
+    /* Check InheritBefore from location config or .htaccess options */
+    if ((lcf->options & OPTION_INHERIT_BEFORE) || (options_htaccess & OPTION_INHERIT_BEFORE)) {
+        inherit_before = 1;
+    }
+
+    ngx_log_debug3(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "mod_rewrite: location handler rules from .htaccess found %d, inherit_before=%d, .htaccess=\"%V\"",
+                   combined_rules->nelts, inherit_before, &htaccess_path);
     if (combined_rules->nelts > 0 && lcf->rules->nelts > 0) {
-        /* Create combined array: htaccess rules first, then location rules */
+        /* Create combined array */
         ngx_array_t *final_rules = ngx_array_create(r->pool,
             combined_rules->nelts + lcf->rules->nelts, sizeof(ngx_rewrite_rule_t));
 
@@ -1798,26 +1900,48 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
-        /* Copy htaccess rules first */
-        for (ngx_uint_t j = 0; j < combined_rules->nelts; j++) {
-            ngx_rewrite_rule_t *src, *dst;
-            src = (ngx_rewrite_rule_t *)combined_rules->elts + j;
-            dst = ngx_array_push(final_rules);
-            if (dst == NULL) {
-                return NGX_HTTP_INTERNAL_SERVER_ERROR;
+        if (inherit_before) {
+            /* InheritBefore: location (parent) rules first, then htaccess (child) rules */
+            for (ngx_uint_t j = 0; j < lcf->rules->nelts; j++) {
+                ngx_rewrite_rule_t *src, *dst;
+                src = (ngx_rewrite_rule_t *)lcf->rules->elts + j;
+                dst = ngx_array_push(final_rules);
+                if (dst == NULL) {
+                    return NGX_HTTP_INTERNAL_SERVER_ERROR;
+                }
+                *dst = *src;
             }
-            *dst = *src;
-        }
 
-        /* Copy location rules after */
-        for (ngx_uint_t j = 0; j < lcf->rules->nelts; j++) {
-            ngx_rewrite_rule_t *src, *dst;
-            src = (ngx_rewrite_rule_t *)lcf->rules->elts + j;
-            dst = ngx_array_push(final_rules);
-            if (dst == NULL) {
-                return NGX_HTTP_INTERNAL_SERVER_ERROR;
+            for (ngx_uint_t j = 0; j < combined_rules->nelts; j++) {
+                ngx_rewrite_rule_t *src, *dst;
+                src = (ngx_rewrite_rule_t *)combined_rules->elts + j;
+                dst = ngx_array_push(final_rules);
+                if (dst == NULL) {
+                    return NGX_HTTP_INTERNAL_SERVER_ERROR;
+                }
+                *dst = *src;
             }
-            *dst = *src;
+        } else {
+            /* Default: htaccess rules first, then location rules */
+            for (ngx_uint_t j = 0; j < combined_rules->nelts; j++) {
+                ngx_rewrite_rule_t *src, *dst;
+                src = (ngx_rewrite_rule_t *)combined_rules->elts + j;
+                dst = ngx_array_push(final_rules);
+                if (dst == NULL) {
+                    return NGX_HTTP_INTERNAL_SERVER_ERROR;
+                }
+                *dst = *src;
+            }
+
+            for (ngx_uint_t j = 0; j < lcf->rules->nelts; j++) {
+                ngx_rewrite_rule_t *src, *dst;
+                src = (ngx_rewrite_rule_t *)lcf->rules->elts + j;
+                dst = ngx_array_push(final_rules);
+                if (dst == NULL) {
+                    return NGX_HTTP_INTERNAL_SERVER_ERROR;
+                }
+                *dst = *src;
+            }
         }
 
         ngx_str_t local_base_url = ngx_null_string;
@@ -2723,7 +2847,7 @@ ngx_http_apache_rewrite_url_register_hook_with_fallback(ngx_http_request_t *r)
 {
     ngx_str_t          path, args, fallback_buf;
     ngx_http_core_loc_conf_t  *clcf;
-    struct stat        st;
+    ngx_file_info_t    fi;
     ngx_rewrite_ctx_t  *ctx;
 
     /* Fallback enabled — check file existence first */
@@ -2752,7 +2876,7 @@ ngx_http_apache_rewrite_url_register_hook_with_fallback(ngx_http_request_t *r)
                        "mod_rewrite: fallback check for file %s",
                        r_path_null);
 
-        if (stat((const char *)r_path_null, &st) != 0) {
+        if (ngx_file_info(r_path_null, &fi) != NGX_OK) {
             fallback_needed = 1;
         }
     }

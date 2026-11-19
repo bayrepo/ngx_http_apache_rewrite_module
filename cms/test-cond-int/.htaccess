@@ -1,0 +1,8 @@
+RewriteEngine On
+RewriteBase /test-cond-int/
+RewriteCond %{SERVER_PORT} -gt8000
+RewriteRule ^int-gt$ gt-matched.html [L]
+RewriteCond %{SERVER_PORT} -lt9000
+RewriteRule ^int-lt$ lt-matched.html [L]
+RewriteCond %{SERVER_PORT} -eq8087
+RewriteRule ^int-eq$ eq-matched.html [L]

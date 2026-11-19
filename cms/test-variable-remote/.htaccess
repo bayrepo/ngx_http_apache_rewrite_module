@@ -1,0 +1,6 @@
+RewriteEngine On
+RewriteBase /test-variable-remote/
+RewriteCond %{REMOTE_ADDR} ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$
+RewriteRule ^remote-addr$ addr-ok.html [L]
+RewriteCond %{REMOTE_PORT} ^[0-9]+$
+RewriteRule ^remote-port$ rport-ok.html [L]

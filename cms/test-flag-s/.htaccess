@@ -1,0 +1,6 @@
+RewriteEngine On
+RewriteBase /test-flag-s/
+RewriteRule ^skip-test$ first.html [S=2,L]
+RewriteRule ^skip-test$ second.html [L]
+RewriteRule ^skip-test$ third.html [L]
+RewriteRule ^no-skip$ direct.html [L]

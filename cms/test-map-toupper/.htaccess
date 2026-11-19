@@ -1,0 +1,3 @@
+RewriteEngine On
+RewriteBase /test-map-toupper/
+RewriteRule ^map-upper/(.*)$ result-${uc:$1}.html [L]

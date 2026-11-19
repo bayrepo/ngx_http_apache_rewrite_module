@@ -74,38 +74,25 @@ ngx_rewrite_env_variable_handler(ngx_http_request_t *r,
         }
 
         size_t name_len = colon - env->data.data;
-        u_char *var_name_lowered = ngx_pnalloc(r->pool, var_name_len);
-        for (size_t i = 0; i < var_name_len; i++) {
-            var_name_lowered[i] = ngx_tolower(var_name[i]);
-        }
 
-        /* Compare names case-insensitively */
-        if ((name_len == var_name_len &&
-            ngx_strncmp((char *)colon + 1, (char *)var_name_lowered, name_len) == 0) ||
-            strcmp((const char *)(env->data.data), var_name) == 0) {
-
-            /* Found matching env var */
-            u_char *p = v->data;
-            while (*p != ':' && p < v->data + v->len) {
-                p++;
-            }
-
-            if (p < v->data + v->len) {
-                /* Extract value after colon */
-                size_t value_len = env->data.len - name_len - 1;
-                const u_char *value_start = colon + 1;
-                u_char *value_copy = ngx_pnalloc(r->pool, value_len);
-                if (!value_copy) {
-                    v->not_found = 1;
-                    return NGX_OK;
-                }
-
-                ngx_memcpy(value_copy, value_start, value_len);
-
-                v->data = (u_char *)value_copy;
-                v->len = value_len;
+        /* Compare env var name (before colon) with requested name, case-insensitively */
+        if (name_len == var_name_len
+            && ngx_strncasecmp(env->data.data, (u_char *)var_name, name_len) == 0)
+        {
+            /* Found matching env var — extract value after colon */
+            size_t value_len = env->data.len - name_len - 1;
+            const u_char *value_start = colon + 1;
+            u_char *value_copy = ngx_pnalloc(r->pool, value_len);
+            if (!value_copy) {
+                v->not_found = 1;
                 return NGX_OK;
             }
+
+            ngx_memcpy(value_copy, value_start, value_len);
+
+            v->data = (u_char *)value_copy;
+            v->len = value_len;
+            return NGX_OK;
         }
 
         env = env->next;
@@ -325,30 +312,63 @@ ngx_rewrite_add_env_as_headers(ngx_http_request_t *r)
             header_len = i;
         }
 
-        /* Create HTTP_* header entry */
-        u_char *header_value_copy = ngx_pnalloc(r->pool, env->data.len - var_name_len - 1 + 1);
+        /* Prepare header value */
+        size_t value_len = env->data.len - var_name_len - 1;
+        u_char *header_value_copy = ngx_pnalloc(r->pool, value_len + 1);
         if (!header_value_copy) {
             return NGX_ERROR;
         }
 
-        ngx_memcpy(header_value_copy, value_start, env->data.len - var_name_len - 1);
-        header_value_copy[env->data.len - var_name_len - 1] = '\0';
+        ngx_memcpy(header_value_copy, value_start, value_len);
+        header_value_copy[value_len] = '\0';
 
-        /* Add header to r->headers_in */
-        ngx_table_elt_t *h = ngx_list_push(&r->headers_in.headers);
-        if (!h) {
-            return NGX_ERROR;
+        /* Check for existing header with the same name to avoid duplicates */
+        ngx_list_part_t  *part = &r->headers_in.headers.part;
+        ngx_table_elt_t  *hdr = part->elts;
+        ngx_uint_t        found = 0;
+
+        for (ngx_uint_t k = 0; ; k++) {
+            if (k >= part->nelts) {
+                if (part->next == NULL) {
+                    break;
+                }
+                part = part->next;
+                hdr = part->elts;
+                k = 0;
+            }
+
+            if (hdr[k].key.len == header_len
+                && ngx_strncasecmp(hdr[k].key.data, header_name, header_len) == 0)
+            {
+                /* Replace existing header value */
+                hdr[k].value.len = value_len;
+                hdr[k].value.data = header_value_copy;
+                found = 1;
+
+                ngx_log_debug4(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                               "mod_rewrite-http-headers: Replaced HTTP header \"%*s\" => \"%*s\"",
+                               header_len, header_name, value_len, header_value_copy);
+                break;
+            }
         }
 
-        h->hash = 1;
-        h->key.len = header_len;
-        h->key.data = header_name;
-        h->value.len = env->data.len - var_name_len - 1;
-        h->value.data = header_value_copy;
+        if (!found) {
+            /* Add new header */
+            ngx_table_elt_t *h = ngx_list_push(&r->headers_in.headers);
+            if (!h) {
+                return NGX_ERROR;
+            }
 
-        ngx_log_debug4(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                       "mod_rewrite-http-headers: Added HTTP header \"%*s\" => \"%*s\"",
-                       header_len, header_name, h->value.len, h->value.data);
+            h->hash = 1;
+            h->key.len = header_len;
+            h->key.data = header_name;
+            h->value.len = value_len;
+            h->value.data = header_value_copy;
+
+            ngx_log_debug4(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                           "mod_rewrite-http-headers: Added HTTP header \"%*s\" => \"%*s\"",
+                           header_len, header_name, h->value.len, h->value.data);
+        }
 
         env = env->next;
     }

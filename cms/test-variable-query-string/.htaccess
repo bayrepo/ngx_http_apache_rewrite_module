@@ -1,0 +1,4 @@
+RewriteEngine On
+RewriteBase /test-variable-query-string/
+RewriteCond %{QUERY_STRING} ^foo=bar$
+RewriteRule ^qs-check$ qs-ok.html [L]

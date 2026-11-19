@@ -1,0 +1,8 @@
+RewriteEngine On
+RewriteBase /test-variable-time/
+RewriteCond %{TIME_YEAR} ^20
+RewriteRule ^time-year$ year-ok.html [L]
+RewriteCond %{TIME_MON} ^(0[1-9]|1[0-2])$
+RewriteRule ^time-mon$ mon-ok.html [L]
+RewriteCond %{TIME_DAY} ^[0-3][0-9]$
+RewriteRule ^time-day$ day-ok.html [L]

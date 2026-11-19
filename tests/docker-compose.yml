@@ -1,0 +1,24 @@
+services:
+  build:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile.build
+    volumes:
+      - module_so:/output
+      - ../modules:/src/modules:ro
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      build:
+        condition: service_completed_successfully
+    volumes:
+      - module_so:/usr/share/nginx/modules:ro
+      - ../cms:/sites:ro
+    ports:
+      - "8081-8089:8081-8089"
+
+volumes:
+  module_so:

@@ -1,0 +1,3 @@
+RewriteEngine On
+RewriteBase /test-absolute-uri/
+RewriteRule ^abs-redir$ http://localhost:8087/absolute-target.html [L]

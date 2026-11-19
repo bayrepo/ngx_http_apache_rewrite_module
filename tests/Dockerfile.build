@@ -1,0 +1,21 @@
+FROM almalinux:9
+
+RUN dnf -y install gcc make pcre-devel zlib-devel openssl-devel nginx wget && \
+    dnf clean all
+
+WORKDIR /build
+
+ENTRYPOINT ["/bin/bash", "-c", "\
+    NGINX_VER=$(nginx -V 2>&1 | grep -oP 'nginx/\\K[0-9.]+' | head -1) && \
+    echo \"Building module for nginx $NGINX_VER\" && \
+    if [ ! -d nginx-$NGINX_VER ]; then \
+        wget -q https://nginx.org/download/nginx-$NGINX_VER.tar.gz && \
+        tar xf nginx-$NGINX_VER.tar.gz; \
+    fi && \
+    cd nginx-$NGINX_VER && \
+    ./configure --with-compat --add-dynamic-module=/src/modules/mod_rewrite 2>&1 | tail -5 && \
+    make modules 2>&1 | tail -5 && \
+    cp objs/ngx_http_apache_rewrite_module.so /output/ && \
+    echo 'Module built successfully' && \
+    ls -la /output/ngx_http_apache_rewrite_module.so \
+"]

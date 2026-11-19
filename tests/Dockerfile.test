@@ -1,0 +1,15 @@
+FROM almalinux:9
+
+RUN dnf -y install nginx php-fpm php-cli --allowerasing && \
+    dnf clean all && \
+    mkdir -p /run/php-fpm /var/log/nginx
+
+COPY nginx/nginx.conf /etc/nginx/nginx.conf
+COPY php-fpm/www.conf /etc/php-fpm.d/www.conf
+COPY scripts/ /tests/
+
+RUN chmod +x /tests/run-tests.sh /tests/suites/*.sh
+
+EXPOSE 8081-8086
+
+CMD ["/tests/run-tests.sh"]

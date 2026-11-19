@@ -1,0 +1,4 @@
+RewriteEngine On
+RewriteBase /test-variable-http-host/
+RewriteCond %{HTTP_HOST} ^localhost
+RewriteRule ^host-check$ host-ok.html [L]

@@ -1,0 +1,8 @@
+RewriteEngine On
+RewriteBase /test-variable-server/
+RewriteCond %{SERVER_PORT} ^[0-9]+$
+RewriteRule ^server-port$ port-ok.html [L]
+RewriteCond %{SERVER_PROTOCOL} ^HTTP/
+RewriteRule ^server-proto$ proto-ok.html [L]
+RewriteCond %{SERVER_SOFTWARE} nginx
+RewriteRule ^server-sw$ sw-ok.html [L]

@@ -1,0 +1,4 @@
+RewriteEngine On
+RewriteBase /test-variable-document-root/
+RewriteCond %{DOCUMENT_ROOT} /sites
+RewriteRule ^docroot-check$ docroot-ok.html [L]
