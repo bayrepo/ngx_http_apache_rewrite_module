@@ -225,6 +225,10 @@ typedef struct {
     unsigned        fallback_to_index_set:1;
     ngx_int_t       glstate;
     unsigned        glstate_set:1;
+
+    /* RewriteLog: when enabled, logs rewrite processing at ERR level */
+    ngx_int_t       rewrite_log;
+    unsigned        rewrite_log_set:1;
 } ngx_http_apache_rewrite_srv_conf_t;
 
 /*

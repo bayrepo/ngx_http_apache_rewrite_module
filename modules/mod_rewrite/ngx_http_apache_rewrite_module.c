@@ -75,6 +75,9 @@ static ngx_int_t ngx_http_apache_rewrite_location_handler(
 static ngx_int_t
 ngx_http_apache_rewrite_url_register_hook_with_fallback(ngx_http_request_t *r);
 
+static char *ngx_http_rewrite_log(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf);
+
 /* --- Flag parsing helpers --- */
 
 static ngx_int_t ngx_http_rewrite_parse_rule_flags(ngx_pool_t *pool,
@@ -157,6 +160,13 @@ static ngx_command_t ngx_http_apache_rewrite_commands[] = {
       0,
       NULL },
 
+    { ngx_string("RewriteLog"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
+      ngx_http_rewrite_log,
+      0,
+      0,
+      NULL },
+
     ngx_null_command
 };
 
@@ -231,6 +241,8 @@ ngx_http_apache_rewrite_create_srv_conf(ngx_conf_t *cf)
     conf->htaccess_enable_set = 0;
 
     conf->fallback_to_index = 0;
+    conf->rewrite_log = 0;
+    conf->rewrite_log_set = 0;
 
     return conf;
 }
@@ -257,6 +269,10 @@ ngx_http_apache_rewrite_merge_srv_conf(ngx_conf_t *cf,
 
     if (!conf->fallback_to_index_set){
         conf->fallback_to_index = prev->fallback_to_index;
+    }
+
+    if (!conf->rewrite_log_set) {
+        conf->rewrite_log = prev->rewrite_log;
     }
 
     /* Inherit rules if child has none and Inherit option is set */
@@ -1601,6 +1617,12 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
     sconf = ngx_http_get_module_srv_conf(r, ngx_http_apache_rewrite_module);
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
+    if (sconf && sconf->rewrite_log) {
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+            "mod_rewrite: handler uri=\"%V\" lcf_state=%d srv_state=%d htaccess=%d",
+            &r->uri, lcf ? lcf->state : -1, sconf->state, sconf->htaccess_enable);
+    }
+
     if (sconf != NULL && sconf->glstate_set == 1 && sconf->glstate == ENGINE_ENABLED) {
         global_enabled = 1;
     }
@@ -1713,6 +1735,10 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
                                         &htaccess_path);
 
         if (rc == NGX_ERROR) {
+                if (sconf && sconf->rewrite_log) {
+                    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                        "mod_rewrite: htaccess NOT FOUND uri=\"%V\"", &r->uri);
+                }
                 ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                            "mod_rewrite: location handler .htaccess not found, uri=\"%V\"", &r->uri);
                 /* File not found — use only location rules */
@@ -1728,6 +1754,10 @@ ngx_http_apache_rewrite_location_handler(ngx_http_request_t *r)
 
         /* LOG: Show found htaccess path */
         if (rc == NGX_OK && htaccess_path.data) {
+            if (sconf && sconf->rewrite_log) {
+                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                    "mod_rewrite: htaccess FOUND \"%V\"", &htaccess_path);
+            }
             ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                            "mod_rewrite: found .htaccess at: %V", &htaccess_path);
         } else {
@@ -2942,4 +2972,36 @@ ngx_http_apache_rewrite_url_register_hook_with_fallback(ngx_http_request_t *r)
         return NGX_DECLINED;
     }
 
+}
+
+
+/*
+ * RewriteLog on|off — enable rewrite processing log at ERR level
+ */
+static char *
+ngx_http_rewrite_log(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_str_t                          *value;
+    ngx_http_apache_rewrite_srv_conf_t *sconf;
+
+    value = cf->args->elts;
+    sconf = ngx_http_conf_get_module_srv_conf(cf,
+                ngx_http_apache_rewrite_module);
+    if (sconf == NULL) {
+        return NGX_CONF_OK;
+    }
+
+    if (ngx_strcasecmp(value[1].data, (u_char *) "on") == 0) {
+        sconf->rewrite_log = 1;
+        sconf->rewrite_log_set = 1;
+    } else if (ngx_strcasecmp(value[1].data, (u_char *) "off") == 0) {
+        sconf->rewrite_log = 0;
+        sconf->rewrite_log_set = 1;
+    } else {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+            "RewriteLog: invalid value \"%V\"", &value[1]);
+        return NGX_CONF_ERROR;
+    }
+
+    return NGX_CONF_OK;
 }

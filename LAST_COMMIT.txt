@@ -1,3 +1,7 @@
-commit ed603c5e14295f68835dc3eac3fdb406e19d7fde (HEAD -> master, origin/master)
-Author:  Alexey Bayrepo <a@bayrepo.ru>
-Date:   Thu Nov 19 23:04:31 2026 +0300
+commit 5a69a1cfdf40e44cef944b8a4df9dbd0913adb90 (HEAD -> master, origin/master)
+Author: Alexey Bayrepo <a@bayrepo.ru>
+Date:   Sat Nov 21 15:00:56 2026 +0300
+
+    Update README
+
+

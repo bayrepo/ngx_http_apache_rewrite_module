@@ -501,6 +501,26 @@ The `GlobalLocationRewriteEngine` directive allows setting the rewrite engine st
 
 ---
 
+## Known Limitations
+
+### Hierarchical .htaccess Merging
+
+Unlike Apache mod_rewrite, this module does **not** merge `.htaccess` files from parent directories. When a subdirectory contains its own `.htaccess`, only that file's rules are applied — rules from parent/root `.htaccess` files are ignored for requests within that subdirectory.
+
+**Example:** If the root `.htaccess` blocks access to `user/data/*.json` but `user/data/` has its own `.htaccess`, the root security rules will not apply to files in `user/data/`.
+
+**Workaround:** Duplicate critical security rules in each subdirectory's `.htaccess`, or avoid placing `.htaccess` files in subdirectories when relying on root-level security rules.
+
+This limitation is documented in `PLAN.md` with a detailed implementation plan for future versions.
+
+### Other Limitations
+
+- `%{QUERY_STRING}` regex matching may fail with complex escaped patterns (`\(`, `\)`) in some contexts
+- Backreferences `%1`/`%2` from RewriteCond in substitution strings may not work correctly with redirect rules
+- `[E=VAR:VAL]` environment variables without `HTTP_` prefix are not passed to PHP-FastCGI (only `HTTP_*` vars are injected as headers)
+
+---
+
 ## Notes
 
 - Rewrite rules are processed in order as defined in configuration or `.htaccess` files

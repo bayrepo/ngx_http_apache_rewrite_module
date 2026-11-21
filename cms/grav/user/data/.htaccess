@@ -1,0 +1,2 @@
+# Subdir htaccess — should NOT override root security rules
+RewriteEngine On

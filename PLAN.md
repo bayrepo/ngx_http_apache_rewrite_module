@@ -195,3 +195,138 @@ typedef struct {
 | Phase 5: Config/monitoring | ~100 | Low |
 | Tests | ~400 | Medium |
 | **Total** | **~1330** | |
+
+---
+
+## Hierarchical .htaccess Merging (Apache-Compatible)
+
+### Problem
+
+When a subdirectory contains its own `.htaccess` file, the module currently uses **only that file's rules**, ignoring the parent/root `.htaccess`. In Apache mod_rewrite, `.htaccess` files are processed **hierarchically**: rules from the root `.htaccess` are applied first, then subdirectory rules are appended. This means security rules defined in the root `.htaccess` (e.g., blocking `user/data/*.json`) apply even when a subdirectory has its own `.htaccess` with different rules.
+
+**Real-world impact:** Grav CMS places a secondary `.htaccess` in `user/data/` using `mod_alias` (`RedirectMatch`). Our module finds this subdir `.htaccess` first, ignores the root `.htaccess` Security section, and serves private files that should be blocked.
+
+### Goal
+
+Merge rules from all `.htaccess` files along the path from docroot to the request directory, applying them in Apache order: root first, then each subdirectory level down to the leaf. Subdirectory `.htaccess` can override `RewriteEngine`, `RewriteBase`, `RewriteOptions`, and `RewriteFallBack`; rules are always cumulative.
+
+### Why Previous Attempt Failed
+
+First implementation attempt caused infinite internal redirect loops. Root cause: merging root `.htaccess` Index rule (`RewriteRule .* index.php [L]`) with subdir rules caused requests for non-existing files to rewrite to `index.php`, which triggered another handler invocation, which merged again, creating a cycle. The `!r->internal` guard was insufficient because nginx creates new subrequests (not marked as internal) for some redirect types.
+
+### Architecture
+
+```
+Request: /user/data/file.json
+DocRoot: /var/www/site/
+
+Step 1: Collect .htaccess paths (docroot → leaf):
+  [0] /var/www/site/.htaccess           (root — Security, Index, Exploits)
+  [1] /var/www/site/user/.htaccess       (if exists)
+  [2] /var/www/site/user/data/.htaccess  (leaf — mod_alias rules)
+
+Step 2: Parse each file (with caching per path+mtime)
+
+Step 3: Merge rules in order: root_rules + user_rules + data_rules
+
+Step 4: Apply merged rule set once via ngx_rewrite_apply_list()
+
+Step 5: Use RewriteBase/RewriteOptions/RewriteFallBack from DEEPEST .htaccess
+```
+
+### Key Design Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Collection direction | Docroot → leaf (top-down) | Matches Apache processing order |
+| Rule merging | Concatenate all rules into single array | Single pass through `apply_list`, avoids multiple handler invocations |
+| Config inheritance | Deepest .htaccess wins for state/baseurl/fallback/options | Matches Apache per-directory override semantics |
+| Caching | Per-path cache entry (existing mechanism) | Each .htaccess cached independently by mtime |
+| Loop prevention | Apply merged rules in single `apply_list` call | No re-entry, no recursive handler calls |
+| `<IfModule>` handling | Skip unknown directives (current behavior) | `mod_alias` directives ignored; only `mod_rewrite` rules merged |
+
+### Implementation Steps
+
+#### Phase 1: Path collection function
+
+Create `ngx_htaccess_collect_paths()` that walks from docroot to current directory, collecting all existing `.htaccess` file paths into an `ngx_array_t`:
+
+```c
+static ngx_array_t *
+ngx_htaccess_collect_paths(ngx_http_request_t *r,
+    u_char *docroot, size_t docroot_len,
+    ngx_str_t *current_path,
+    u_char *htaccess_name, size_t htaccess_name_len);
+```
+
+- Start at docroot, check for `.htaccess`
+- Walk each path component toward current directory
+- For each level, stat() the `.htaccess` file
+- Return array of `ngx_str_t` paths in top-down order
+- Return NULL if no `.htaccess` files found
+
+**Critical:** Must handle edge cases:
+- docroot == current directory (single level)
+- Trailing slash variations
+- Variable roots (`$root_path`)
+- Empty path components
+
+#### Phase 2: Multi-file parse and merge
+
+Replace single-file parse in location handler with loop over collected paths:
+
+```c
+for each htaccess_path in collected_paths:
+    1. Check cache (existing htaccess_cache_head linked list)
+    2. If not cached: parse via ngx_htaccess_parse_file_from_ha()
+    3. Append rules to merged_rules array
+    4. Track state/baseurl/options/fallback from deepest file
+```
+
+**Loop prevention:** All rules merged into single array BEFORE calling `apply_list`. No recursive handler invocations. No re-parsing on internal redirects.
+
+#### Phase 3: Cache integration
+
+Extend existing cache to support multiple entries per request:
+- Current cache: linked list keyed by file path + mtime
+- Already supports multiple entries (linked list structure)
+- Each `.htaccess` level cached independently
+- On mtime change, only affected level re-parsed
+
+#### Phase 4: Testing
+
+1. Create test fixture with nested `.htaccess`:
+   - Root: Security rules (block `user/data/*.json`)
+   - `user/data/`: Separate `.htaccess` with different rules
+   - Verify root Security rules still apply to `user/data/` files
+2. Test with Grav CMS real `.htaccess` structure
+3. Verify no performance regression for sites without nested `.htaccess`
+4. Verify cache works correctly across multiple levels
+
+### Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Infinite redirect loop | Server hangs | Single `apply_list` call with pre-merged rules; no recursive handler entry |
+| Performance: multiple stat() calls | Slower requests | Cache per path+mtime; stat() only on cache miss |
+| Performance: parsing multiple files | Slower first request | Cache parsed rules; subsequent requests use cache |
+| Rule ordering conflicts | Unexpected behavior | Document Apache-compatible ordering; deepest .htaccess config wins |
+| Memory: multiple parsed rule sets | Higher pool usage | Rules cached and shared across requests via pool cleanup |
+| `<IfModule>` wrapping | Rules inside unsupported modules skipped | Acceptable: only `mod_rewrite` rules processed; document limitation |
+
+### Estimated Effort
+
+| Phase | Lines of Code | Complexity |
+|-------|--------------|------------|
+| Phase 1: Path collection | ~80 | Medium |
+| Phase 2: Multi-file parse/merge | ~100 | High |
+| Phase 3: Cache integration | ~30 | Low |
+| Phase 4: Testing | ~100 | Medium |
+| **Total** | **~310** | |
+
+### Dependencies
+
+- Existing `ngx_htaccess_parse_file_from_ha()` — reused as-is
+- Existing cache infrastructure (`htaccess_entry_t` linked list) — extended
+- Existing `ngx_htaccess_build_path()` — reused for initial path construction
+- No new external dependencies

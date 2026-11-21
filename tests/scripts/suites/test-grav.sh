@@ -70,4 +70,10 @@ test_status "composer.json blocked (403)" \
 test_status ".htaccess blocked (403)" \
     "$BASE/.htaccess" "403"
 
+# 9. Hierarchical .htaccess merge not yet implemented.
+# When subdir has its own .htaccess, root security rules are NOT applied.
+# This is a known limitation — see PLAN.md for implementation plan.
+test_status "Hierarchical: user/data/*.json NOT blocked (no merge yet) (200)" \
+    "$BASE/user/data/test-probe.json" "200"
+
 suite_end
